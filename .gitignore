@@ -1,0 +1,22 @@
+# Dependency and build output
+node_modules/
+dist/
+.pnpm-store/
+.npm-cache/
+
+# Local editor and operating-system files
+.DS_Store
+Thumbs.db
+*.log
+
+# Legacy Axure prototype export (not used by the Vue static site)
+data/
+files/
+images/
+plugins/
+resources/
+
+# Local Codex launcher files (contain machine-specific runtime paths)
+start-workbench.ps1
+启动工作台.cmd
+使用说明.txt

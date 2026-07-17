@@ -1,0 +1,36 @@
+# 将 example.com、证书路径及站点目录替换为实际值后启用。
+server {
+    listen 80;
+    server_name example.com www.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name example.com www.example.com;
+
+    ssl_certificate     /etc/nginx/certs/example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    root /var/www/medical-aesthetics-demo;
+    index index.html;
+
+    # 入口页不长期缓存，确保版本发布后可及时刷新。
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    # Vite 构建出的带哈希资源可长期缓存。
+    location /assets/ {
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # 支持后续增加前端路由；未知路径回退至静态应用入口。
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
