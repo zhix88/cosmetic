@@ -277,7 +277,7 @@ const modules = [
 const isAdmin = computed(() => props.role === 'admin')
 const canEditRules = computed(() => ['admin','storeManager'].includes(props.role))
 const allowedStores = computed(() => isAdmin.value ? props.stores : [props.roleMeta.store])
-const permissionModules = [{key:'workbench',label:'工作台'},{key:'customers',label:'顾客档案'},{key:'appointments',label:'预约记录'},{key:'dashboard',label:'经营看板'},{key:'dailyReports',label:'每日报表'},{key:'dealReports',label:'成效报表'},...modules.map(x=>({key:x.key,label:x.label}))]
+const permissionModules = [{key:'workbench',label:'工作台'},{key:'customers',label:'顾客档案'},{key:'appointments',label:'预约记录'},{key:'dashboard',label:'经营看板'},{key:'dailyReports',label:'每日报表'},{key:'dealReports',label:'成交报表'},...modules.map(x=>({key:x.key,label:x.label}))]
 const pageOptions = permissionModules
 const permissionActions = [{key:'view',label:'查看'},{key:'create',label:'新增'},{key:'edit',label:'编辑'},{key:'delete',label:'删除'},{key:'import',label:'导入'},{key:'export',label:'导出'},{key:'confirm',label:'确认'},{key:'return',label:'退回'},{key:'unlock',label:'解锁'},{key:'operate',label:'业务操作'}]
 const actionOptions = permissionActions.map(x=>x.key)

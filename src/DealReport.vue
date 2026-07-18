@@ -3,7 +3,7 @@
     <div class="deal-toolbar">
       <el-date-picker v-model="dateRange" type="daterange" value-format="YYYY-MM-DD" format="YYYY/MM/DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" :clearable="false" :disabled-date="disableFuture" />
       <el-select v-model="selectedStore" :disabled="role !== 'admin'"><el-option v-if="role === 'admin'" label="全部门店" value="all" /><el-option v-for="store in stores" :key="store" :label="store" :value="store" /></el-select>
-      <el-select v-model="selectedDimension"><el-option label="全部岗位" value="all" /><el-option v-for="item in dimensions" :key="item.key" :label="item.label" :value="item.key" /></el-select>
+      <el-select v-model="selectedDimension"><el-option v-if="!personalView" label="全部岗位" value="all" /><el-option v-for="item in availableDimensions" :key="item.key" :label="item.label" :value="item.key" /></el-select>
       <el-tag type="info">实时数据</el-tag>
       <el-button class="toolbar-action" type="success" :icon="Download" @click="exportExcel">导出Excel</el-button>
     </div>
@@ -50,12 +50,14 @@ defineEmits(['open-record'])
 const today=()=>new Date().toISOString().slice(0,10)
 const dateRange=ref([today(),today()])
 const selectedStore=ref(props.role==='admin'?'all':props.roleMeta.store)
-const selectedDimension=ref('all')
+const personalView=computed(()=>!['storeManager','director','admin'].includes(props.role))
+const selectedDimension=ref(personalView.value?props.role:'all')
 const pageSize=15
 const pages=reactive({})
 const detailVisible=ref(false),detailTitle=ref(''),detailRecords=ref([])
 const detailDimensionKey=ref('director')
 const dimensions=[{key:'cardConsultant',label:'卡姐'},{key:'beautyConsultant',label:'美导'},{key:'market',label:'市场'},{key:'service',label:'客服'},{key:'butler',label:'管家'},{key:'manager',label:'经理'},{key:'director',label:'总监'}]
+const availableDimensions=computed(()=>personalView.value?dimensions.filter(item=>item.key===props.role):dimensions)
 const dimensionLabel=computed(()=>selectedDimension.value==='all'?'全部岗位':dimensions.find(x=>x.key===selectedDimension.value)?.label||'人员')
 const rangeLabel=computed(()=>dateRange.value[0]===dateRange.value[1]?displayDate(dateRange.value[0]):`${displayDate(dateRange.value[0])} 至 ${displayDate(dateRange.value[1])}`)
 const dailyRecords=computed(()=>props.records.filter(x=>x.businessDate>=dateRange.value[0]&&x.businessDate<=dateRange.value[1]&&(selectedStore.value==='all'||x.store===selectedStore.value)))
@@ -63,11 +65,11 @@ const storeGroups=computed(()=>{const names=selectedStore.value==='all'?props.st
 const allSummary=computed(()=>sumRows(storeGroups.value.map(x=>x.summary)))
 const displayGroups=computed(()=>selectedStore.value==='all'?[{store:'全部门店汇总',rows:mergePeople(storeGroups.value.flatMap(x=>x.rows)),summary:allSummary.value},...storeGroups.value]:storeGroups.value)
 watch([dateRange,selectedStore,selectedDimension],()=>Object.keys(pages).forEach(k=>delete pages[k]),{deep:true})
-watch(()=>props.role,()=>selectedStore.value=props.role==='admin'?'all':props.roleMeta.store)
+watch(()=>props.role,()=>{selectedStore.value=props.role==='admin'?'all':props.roleMeta.store;selectedDimension.value=personalView.value?props.role:'all'})
 
 function ownerFor(record,key){if(key==='cardConsultant')return record.cardConsultant||'未分配';if(key==='beautyConsultant')return record.beautyConsultant||'未分配';return record.assignments?.[key]||'未分配'}
 function ownerName(record){return selectedDimension.value==='all'?'全部岗位':ownerFor(record,selectedDimension.value)}
-function buildStoreGroup(store,records){const map=new Map();records.forEach(record=>{const roles=selectedDimension.value==='all'?dimensions:[dimensions.find(x=>x.key===selectedDimension.value)];roles.filter(Boolean).forEach(role=>{const name=ownerFor(record,role.key),key=`${role.key}:${name}`;if(!map.has(key))map.set(key,{name,position:role.label,dimensionKey:role.key,records:[]});map.get(key).records.push(record)})});const rows=[...map.values()].map(group=>({...group,...summarize(group.records)})).sort((a,b)=>b.total.performance-a.total.performance||a.name.localeCompare(b.name,'zh-CN'));return {store,rows,summary:summarize(records)}}
+function buildStoreGroup(store,records){const map=new Map();records.forEach(record=>{const roles=selectedDimension.value==='all'?availableDimensions.value:[availableDimensions.value.find(x=>x.key===selectedDimension.value)];roles.filter(Boolean).forEach(role=>{const name=personalView.value?props.roleMeta.name:ownerFor(record,role.key),key=`${role.key}:${name}`;if(!map.has(key))map.set(key,{name,position:role.label,dimensionKey:role.key,records:[]});map.get(key).records.push(record)})});const rows=[...map.values()].map(group=>({...group,...summarize(group.records)})).sort((a,b)=>b.total.performance-a.total.performance||a.name.localeCompare(b.name,'zh-CN'));return {store,rows,summary:summarize(records)}}
 function summarize(records){const section=type=>{const source=records.filter(x=>(type==='new')===(x.diagnosisType==='新诊'));const consultationRows=source.filter(isConsultation),dealRows=source.filter(isDeal);const consultations=consultationRows.reduce((s,x)=>s+personCount(x),0),deals=dealRows.reduce((s,x)=>s+personCount(x),0),performance=dealRows.reduce((s,x)=>s+recordAmount(x),0),cash=dealRows.reduce((s,x)=>s+Number(x.revenue||0),0);return {consultations,deals,performance,cash,conversion:consultations?deals/consultations*100:0,ticket:deals?performance/deals:0}};const n=section('new'),r=section('returning');return {new:n,returning:r,total:combine(n,r)}}
 function combine(a,b){const consultations=a.consultations+b.consultations,deals=a.deals+b.deals,performance=a.performance+b.performance,cash=a.cash+b.cash;return {consultations,deals,performance,cash,conversion:consultations?deals/consultations*100:0,ticket:deals?performance/deals:0}}
 function sumRows(rows){return rows.reduce((acc,row)=>({new:combine(acc.new,row.new),returning:combine(acc.returning,row.returning),total:combine(acc.total,row.total)}),{new:zero(),returning:zero(),total:zero()})}

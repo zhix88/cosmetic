@@ -37,7 +37,7 @@
           :class="{ active: activePage === 'dealReports' }"
           @click="activePage = 'dealReports'"
         >
-          <el-icon><TrendCharts /></el-icon>成效报表
+          <el-icon><TrendCharts /></el-icon>成交报表
         </button>
         <button
           v-if="canViewSettings"
@@ -654,7 +654,7 @@ const guideModules = [
   { key:'appointments',label:'预约记录',icon:Calendar,description:'通过月历查看预约，支持新增、邀约、改期和取消。',tip:'安排每日到店计划' },
   { key:'dashboard',label:'经营看板',icon:DataAnalysis,description:'查看业务进度、转化漏斗、经营趋势和排行。',tip:'店长和管理员可见',roles:['storeManager','admin'] },
   { key:'dailyReports',label:'每日报表',icon:Document,description:'自动汇总门店每日经营数据，由店长核对确认。',tip:'支持审核和Excel导出',roles:['storeManager','admin'] },
-  { key:'dealReports',label:'成效报表',icon:TrendCharts,description:'按日期、门店、人员岗位分析成交表现。',tip:'全员可按权限查看',roles:['market','service','butler','director','storeManager','admin'] },
+  { key:'dealReports',label:'成交报表',icon:TrendCharts,description:'按日期、门店、人员岗位分析成交表现。',tip:'全员可按权限查看',roles:['market','service','butler','director','storeManager','admin'] },
   { key:'settings',label:'系统设置',icon:Setting,description:'维护组织、员工、项目、耗材、权限和业务规则。',tip:'店长和管理员可见',roles:['storeManager','admin'] }
 ]
 const guideFlow = [
@@ -885,7 +885,7 @@ const pageHeader = computed(() => ({
   workbench: { title: '顾客业务维护工作台', subtitle: '按角色处理本人任务，全店进度实时可见' },
   dashboard: { title: '门店经营数据看板', subtitle: '按周期洞察门店业务转化与经营质量' },
   dailyReports: { title: '门店每日经营报表', subtitle: '自动汇总每日经营数据，由店长核对确认' },
-  dealReports: { title: '成效报表', subtitle: '按门店、岗位和个人维度分析每日成交业绩' },
+  dealReports: { title: '成交报表', subtitle: '按门店、岗位和个人维度分析每日成交业绩' },
   customers: { title: '顾客档案管理', subtitle: '沉淀顾客资料、会员资产与完整服务历史' }
   ,appointments: { title: '预约记录', subtitle: '按月查看每日邀约与到店安排' }
   ,settings: { title: '系统设置', subtitle: '统一维护组织、人员、项目、权限与耗材库存' }
@@ -898,9 +898,9 @@ const canViewDealReports = computed(() => canView('dealReports'))
 const canViewSettings = computed(() => ['storeManager', 'admin'].includes(currentRole.value) && canView('settings'))
 const hasAllStores = computed(() => currentRole.value === 'admin' || currentRoleDefinition.value?.dataScope === '全部门店')
 function recordInScope(record) {
-  if (hasAllStores.value) return true
-  if (currentRoleDefinition.value?.dataScope === '本人') return Object.values(record.assignments || {}).includes(currentRoleMeta.value.name)
-  return record.store === currentRoleMeta.value.store
+  if (currentRole.value === 'admin') return true
+  if (['storeManager', 'director'].includes(currentRole.value)) return record.store === currentRoleMeta.value.store
+  return record.assignments?.[currentRole.value] === currentRoleMeta.value.name
 }
 const scopedRecords = computed({ get: () => records.value.filter(recordInScope), set: (value) => { records.value = value } })
 const dashboardRecords = computed(() => [...historicalRecords, ...records.value].filter(recordInScope))

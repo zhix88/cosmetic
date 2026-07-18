@@ -421,10 +421,11 @@ function previousCancelRate() { return cancelRate(previousRecords.value) }
 
 function buildRanking(type, metricName) {
   const groups = new Map()
+  const personalView = !['storeManager', 'director', 'admin'].includes(props.role)
   scopedRecords.value.forEach((record) => {
     let names = []
     if (type === 'store') names = [record.store]
-    if (type === 'staff') names = [...new Set(Object.values(record.assignments || {}))]
+    if (type === 'staff') names = personalView ? [props.roleMeta.name] : [...new Set(Object.values(record.assignments || {}))]
     if (type === 'project') names = record.projects?.length ? record.projects : [record.estimatedProject || '未分类']
     names.filter(Boolean).forEach((name) => {
       if (!groups.has(name)) groups.set(name, { name, records: [], amount: 0, deals: 0 })

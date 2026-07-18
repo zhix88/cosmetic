@@ -97,6 +97,7 @@ const today=()=>new Date().toISOString().slice(0,10)
 const reports=ref(JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'))
 const filterMonth=ref(today().slice(0,7))
 const filterStore=ref(props.role==='admin'?'all':props.roleMeta.store)
+const personalView=computed(()=>!['storeManager','director','admin'].includes(props.role))
 const filterStatus=ref('all')
 const currentPage=ref(1)
 const createVisible=ref(false)
@@ -118,7 +119,7 @@ const metricRows=[
   {key:'average',label:'客单价',unit:'元',calculated:true},{key:'svip',label:'SVIP',manual:true},{key:'refund',label:'今日退款金额',unit:'元',manual:true}
 ]
 
-const visibleReports=computed(()=>reports.value.filter(x=>props.role==='admin'||x.storeNameSnapshot===props.roleMeta.store))
+const visibleReports=computed(()=>reports.value.filter(x=>props.role==='admin'||(['storeManager','director'].includes(props.role)&&x.storeNameSnapshot===props.roleMeta.store)||(personalView.value&&x.createdBy===props.roleMeta.name)))
 const filteredReports=computed(()=>visibleReports.value.filter(x=>x.reportDate.startsWith(filterMonth.value)&&(filterStore.value==='all'||x.storeNameSnapshot===filterStore.value)&&(filterStatus.value==='all'||x.status===filterStatus.value)).sort((a,b)=>b.reportDate.localeCompare(a.reportDate)))
 const pagedReports=computed(()=>filteredReports.value.slice((currentPage.value-1)*pageSize,currentPage.value*pageSize))
 const monthReports=computed(()=>visibleReports.value.filter(x=>x.reportDate.startsWith(filterMonth.value)&&(filterStore.value==='all'||x.storeNameSnapshot===filterStore.value)))
