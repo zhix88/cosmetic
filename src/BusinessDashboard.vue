@@ -2,7 +2,7 @@
   <section class="dashboard-page">
     <div class="dashboard-filter-bar">
       <div class="dashboard-filters">
-        <el-select v-model="selectedStore" :disabled="role === 'storeManager'">
+        <el-select v-model="selectedStore" :disabled="role !== 'admin'">
           <el-option v-if="role === 'admin'" label="全部门店" value="all" />
           <el-option v-for="store in stores" :key="store" :label="store" :value="store" />
         </el-select>
@@ -190,7 +190,7 @@ const props = defineProps({
 })
 defineEmits(['open-record'])
 
-const selectedStore = ref(props.role === 'storeManager' ? props.roleMeta.store : 'all')
+const selectedStore = ref(props.role === 'admin' ? 'all' : props.roleMeta.store)
 const period = ref('month')
 const customRange = ref([monthStart(), today()])
 const rankingType = ref(props.role === 'admin' ? 'store' : 'staff')
@@ -316,7 +316,7 @@ const insights = computed(() => [
 ])
 
 watch(() => props.role, () => {
-  selectedStore.value = props.role === 'storeManager' ? props.roleMeta.store : 'all'
+  selectedStore.value = props.role === 'admin' ? 'all' : props.roleMeta.store
   rankingType.value = props.role === 'admin' ? 'store' : 'staff'
 })
 watch([scopedRecords, rankingType, rankingMetric], () => nextTick(renderCharts), { deep: true })

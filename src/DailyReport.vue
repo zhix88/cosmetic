@@ -10,7 +10,7 @@
     <div class="report-list-panel">
       <div class="report-filters">
         <el-date-picker v-model="filterMonth" type="month" value-format="YYYY-MM" format="YYYY年MM月" :clearable="false" />
-        <el-select v-model="filterStore" :disabled="role === 'storeManager'"><el-option v-if="role === 'admin'" label="全部门店" value="all" /><el-option v-for="store in stores" :key="store" :label="store" :value="store" /></el-select>
+        <el-select v-model="filterStore" :disabled="role !== 'admin'"><el-option v-if="role === 'admin'" label="全部门店" value="all" /><el-option v-for="store in stores" :key="store" :label="store" :value="store" /></el-select>
         <el-select v-model="filterStatus"><el-option label="全部状态" value="all" /><el-option label="草稿" value="draft" /><el-option label="已确认" value="confirmed" /><el-option label="已退回" value="returned" /></el-select>
         <el-button v-if="role === 'storeManager'" class="toolbar-action" type="primary" :icon="Plus" @click="openCreate">新增日报</el-button>
       </div>
@@ -96,7 +96,7 @@ const pageSize=15
 const today=()=>new Date().toISOString().slice(0,10)
 const reports=ref(JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'))
 const filterMonth=ref(today().slice(0,7))
-const filterStore=ref(props.role==='storeManager'?props.roleMeta.store:'all')
+const filterStore=ref(props.role==='admin'?'all':props.roleMeta.store)
 const filterStatus=ref('all')
 const currentPage=ref(1)
 const createVisible=ref(false)
@@ -129,7 +129,7 @@ const hasAdjustedMetrics=computed(()=>editingReport.value&&Object.values(editing
 const monthlyTotals=computed(()=>editingReport.value?calculateMonthTotals(editingReport.value):{newCash:0,returningCash:0,sales:0,returnCard:0,refund:0})
 watch(reports,value=>localStorage.setItem(STORAGE_KEY,JSON.stringify(value)),{deep:true})
 watch([filterMonth,filterStore,filterStatus],()=>currentPage.value=1)
-watch(()=>props.role,()=>{filterStore.value=props.role==='storeManager'?props.roleMeta.store:'all'})
+watch(()=>props.role,()=>{filterStore.value=props.role==='admin'?'all':props.roleMeta.store})
 watch(()=>props.resetToken,()=>{reports.value=[];localStorage.removeItem(STORAGE_KEY);editorVisible.value=false;detailVisible.value=false})
 
 function recordsFor(store,date){return props.records.filter(x=>x.store===store&&x.businessDate===date)}

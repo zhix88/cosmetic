@@ -1,5 +1,5 @@
 <template>
-  <ProductPortal v-if="showPortal" @enter-demo="enterDemo" />
+  <LoginView v-if="!isAuthenticated" :employees="employees" @login="handleLogin" />
   <template v-else>
   <div class="app-shell">
     <aside class="sidebar">
@@ -37,7 +37,7 @@
           :class="{ active: activePage === 'dealReports' }"
           @click="activePage = 'dealReports'"
         >
-          <el-icon><TrendCharts /></el-icon>成交报表
+          <el-icon><TrendCharts /></el-icon>成效报表
         </button>
         <button
           v-if="canViewSettings"
@@ -66,21 +66,13 @@
           <p>{{ pageHeader.subtitle }}</p>
         </div>
         <div class="top-actions">
-          <el-button text type="primary" @click="showPortal = true">产品门户</el-button>
-          <el-select ref="roleSelectRef" v-model="currentRole" class="role-select">
-            <el-option
-              v-for="role in roles"
-              :key="role.value"
-              :label="`${role.label} · ${role.name}`"
-              :value="role.value"
-            />
-          </el-select>
           <div class="current-user">
             <span>{{ currentRoleMeta.name.slice(0, 1) }}</span>
             <div><strong>{{ currentRoleMeta.name }}</strong><small>{{ currentRoleMeta.label }}</small></div>
           </div>
           <el-button :icon="QuestionFilled" plain @click="openGuide">操作指引</el-button>
           <el-button plain @click="resetData">重置演示数据</el-button>
+          <el-button plain @click="logout">退出登录</el-button>
         </div>
       </header>
 
@@ -99,8 +91,8 @@
             <el-button text type="primary" @click="selectedDate = today">回到今天</el-button>
           </div>
           <div class="filters">
-            <el-select v-model="selectedStore" placeholder="全部门店" :disabled="currentRole === 'storeManager'">
-              <el-option label="全部门店" value="all" />
+            <el-select v-model="selectedStore" placeholder="全部门店" :disabled="!hasAllStores">
+              <el-option v-if="hasAllStores" label="全部门店" value="all" />
               <el-option v-for="store in stores" :key="store" :label="store" :value="store" />
             </el-select>
             <el-select v-model="diagnosisFilter" placeholder="诊疗类型">
@@ -274,7 +266,7 @@
       />
       <DailyReport
         v-else-if="activePage === 'dailyReports'"
-        :records="records"
+        :records="scopedRecords"
         :role="currentRole"
         :role-meta="currentRoleMeta"
         :stores="stores"
@@ -283,7 +275,7 @@
       />
       <DealReport
         v-else-if="activePage === 'dealReports'"
-        :records="records"
+        :records="scopedRecords"
         :role="currentRole"
         :role-meta="currentRoleMeta"
         :stores="stores"
@@ -291,7 +283,7 @@
       />
       <CustomerArchive
         v-else-if="activePage === 'customers'"
-        :records="records"
+        :records="scopedRecords"
         :role="currentRole"
         :role-meta="currentRoleMeta"
         :stores="stores"
@@ -302,7 +294,7 @@
       />
       <AppointmentCalendar
         v-else-if="activePage === 'appointments'"
-        v-model:records="records"
+        v-model:records="scopedRecords"
         :role="currentRole"
         :role-meta="currentRoleMeta"
         :stores="stores"
@@ -616,12 +608,14 @@ import SystemSettings from './SystemSettings.vue'
 import DailyReport from './DailyReport.vue'
 import DealReport from './DealReport.vue'
 import BatchAppointmentImport from './BatchAppointmentImport.vue'
-import ProductPortal from './ProductPortal.vue'
+import LoginView from './LoginView.vue'
 
 const STORAGE_KEY = 'cosmetic-workbench-v2'
 const today = new Date().toISOString().slice(0, 10)
 const CONFIG_KEY = 'cosmetic-system-config-v1'
 const GUIDE_KEY = 'cosmetic-guide-seen-v1'
+const SETTINGS_KEY = 'cosmetic-settings-data-v1'
+const AUTH_KEY = 'cosmetic-login-session-v1'
 const savedConfig = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null')
 const stores = reactive(savedConfig?.stores || ['科臻澳总店', '金水形象店', '东区旗舰店'])
 const departments = reactive(savedConfig?.departments || ['皮肤管理科', '微整注射科', '抗衰中心', '形体管理科', '私密护理科'])
@@ -633,15 +627,17 @@ const projectCatalog = reactive(savedConfig?.projectCatalog || [
 ])
 const workflowLegend = ['市场邀约', '客服接待', '管家分诊', '总监排诊', '客服回访']
 
-const roles = [
-  { value: 'market', label: '市场', name: '苏晴', store: '科臻澳总店' },
-  { value: 'service', label: '客服', name: '顾妍', store: '科臻澳总店' },
-  { value: 'butler', label: '管家', name: '安然', store: '科臻澳总店' },
-  { value: 'director', label: '总监', name: '林珊', store: '科臻澳总店' },
-  { value: 'storeManager', label: '科臻澳总店店长', name: '周店长', store: '科臻澳总店' },
-  { value: 'admin', label: '平台管理员', name: '系统管理员' }
-]
-const guideRoles = roles.map((role) => ({
+const defaultEmployees = [
+  ['E0001','苏晴','科臻澳总店','市场','market'],['E0002','顾妍','科臻澳总店','客服','service'],['E0003','安然','科臻澳总店','管家','butler'],['E0004','林珊','科臻澳总店','总监','director'],['E0005','周店长','科臻澳总店','店长','storeManager'],['admin','admin','总部','admin','admin']
+].map(([code,name,store,roleLabel,roleKey])=>({code,name,store,roleLabel,roleKey,status:'active',label:roleLabel}))
+const defaultRoles = [
+  ['market','市场','本人'],['service','客服','本人'],['butler','管家','本人'],['director','总监','本人'],['storeManager','店长','本店'],['admin','admin','全部门店']
+].map(([key,label,dataScope])=>({key,label,dataScope,permissions:{workbench:['view','edit'],customers:['view'],appointments:['view'],dashboard:['view','export'],dailyReports:['view','export'],dealReports:['view','export'],...(key==='storeManager'?{settings:['view','edit']}:{}),...(key==='admin'?{settings:['view','edit']}: {})}}))
+const savedSettings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null')
+const employees = ref(ensureAdminEmployee(savedSettings?.staff || defaultEmployees))
+const roleDefinitions = ref(ensureReportPermissions(savedSettings?.roles || defaultRoles))
+const roles = computed(() => employees.value.map((employee) => ({ value: employee.roleKey, label: employee.roleLabel || employee.roleKey, name: employee.name, store: employee.store })))
+const guideRoles = roles.value.map((role) => ({
   ...role,
   guide: {
     market: '负责顾客邀约和预约确认',
@@ -658,7 +654,7 @@ const guideModules = [
   { key:'appointments',label:'预约记录',icon:Calendar,description:'通过月历查看预约，支持新增、邀约、改期和取消。',tip:'安排每日到店计划' },
   { key:'dashboard',label:'经营看板',icon:DataAnalysis,description:'查看业务进度、转化漏斗、经营趋势和排行。',tip:'店长和管理员可见',roles:['storeManager','admin'] },
   { key:'dailyReports',label:'每日报表',icon:Document,description:'自动汇总门店每日经营数据，由店长核对确认。',tip:'支持审核和Excel导出',roles:['storeManager','admin'] },
-  { key:'dealReports',label:'成交报表',icon:TrendCharts,description:'按日期、门店、人员岗位分析成交表现。',tip:'总监及管理角色可见',roles:['director','storeManager','admin'] },
+  { key:'dealReports',label:'成效报表',icon:TrendCharts,description:'按日期、门店、人员岗位分析成交表现。',tip:'全员可按权限查看',roles:['market','service','butler','director','storeManager','admin'] },
   { key:'settings',label:'系统设置',icon:Setting,description:'维护组织、员工、项目、耗材、权限和业务规则。',tip:'店长和管理员可见',roles:['storeManager','admin'] }
 ]
 const guideFlow = [
@@ -691,9 +687,11 @@ const previousStatus = {
   service: 'scheduling', followup: 'service', completed: 'followup'
 }
 
-const currentRole = ref('admin')
+const savedSession = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null')
+const currentUser = ref(employees.value.find((item) => item.code === savedSession?.code && item.status === 'active') || null)
+const currentRole = ref(currentUser.value?.roleKey || '')
 const activePage = ref('workbench')
-const showPortal = ref(true)
+const isAuthenticated = computed(() => Boolean(currentUser.value))
 const customerFocus = reactive({ phone: '', request: 0 })
 const selectedDate = ref(today)
 const selectedStore = ref('all')
@@ -882,27 +880,36 @@ const historicalRecords = createHistoricalRecords()
 const saved = localStorage.getItem(STORAGE_KEY)
 const records = ref(ensureAppointmentSamples((saved ? JSON.parse(saved) : initialRecords()).map(normalizeRecord)))
 
-const currentRoleMeta = computed(() => roles.find((x) => x.value === currentRole.value))
+const currentRoleMeta = computed(() => currentUser.value ? { ...currentUser.value, label: currentUser.value.roleLabel || currentUser.value.roleKey } : { name: '未登录', label: '', roleLabel: '', store: '' })
 const pageHeader = computed(() => ({
   workbench: { title: '顾客业务维护工作台', subtitle: '按角色处理本人任务，全店进度实时可见' },
   dashboard: { title: '门店经营数据看板', subtitle: '按周期洞察门店业务转化与经营质量' },
   dailyReports: { title: '门店每日经营报表', subtitle: '自动汇总每日经营数据，由店长核对确认' },
-  dealReports: { title: '成交报表', subtitle: '按门店和人员角色分析每日成交业绩' },
+  dealReports: { title: '成效报表', subtitle: '按门店、岗位和个人维度分析每日成交业绩' },
   customers: { title: '顾客档案管理', subtitle: '沉淀顾客资料、会员资产与完整服务历史' }
   ,appointments: { title: '预约记录', subtitle: '按月查看每日邀约与到店安排' }
   ,settings: { title: '系统设置', subtitle: '统一维护组织、人员、项目、权限与耗材库存' }
 }[activePage.value] || { title: '医美管理后台', subtitle: '顾客全流程协作' }))
-const canViewDashboard = computed(() => ['storeManager', 'admin'].includes(currentRole.value))
-const canViewDailyReports = computed(() => ['storeManager', 'admin'].includes(currentRole.value))
-const canViewDealReports = computed(() => ['director', 'storeManager', 'admin'].includes(currentRole.value))
-const canViewSettings = computed(() => ['storeManager', 'admin'].includes(currentRole.value))
-const dashboardRecords = computed(() => [...historicalRecords, ...records.value])
+const currentRoleDefinition = computed(() => roleDefinitions.value.find((item) => item.key === currentRole.value))
+const canView = (module) => currentRole.value === 'admin' || (currentRoleDefinition.value?.permissions?.[module] || []).includes('view')
+const canViewDashboard = computed(() => canView('dashboard'))
+const canViewDailyReports = computed(() => canView('dailyReports'))
+const canViewDealReports = computed(() => canView('dealReports'))
+const canViewSettings = computed(() => ['storeManager', 'admin'].includes(currentRole.value) && canView('settings'))
+const hasAllStores = computed(() => currentRole.value === 'admin' || currentRoleDefinition.value?.dataScope === '全部门店')
+function recordInScope(record) {
+  if (hasAllStores.value) return true
+  if (currentRoleDefinition.value?.dataScope === '本人') return Object.values(record.assignments || {}).includes(currentRoleMeta.value.name)
+  return record.store === currentRoleMeta.value.store
+}
+const scopedRecords = computed({ get: () => records.value.filter(recordInScope), set: (value) => { records.value = value } })
+const dashboardRecords = computed(() => [...historicalRecords, ...records.value].filter(recordInScope))
 const activeRecord = computed(() => dashboardRecords.value.find((x) => x.id === activeRecordId.value))
 const dayRecords = computed(() => records.value.filter((x) => {
   const belongsToDate = x.businessDate === selectedDate.value
     || (x.status === 'followup' && x.followupDate === selectedDate.value)
     || (x.status === 'completed' && x.completedDate === selectedDate.value)
-  return belongsToDate && (selectedStore.value === 'all' || x.store === selectedStore.value)
+  return belongsToDate && recordInScope(x) && (selectedStore.value === 'all' || x.store === selectedStore.value)
 }))
 const arrivalRecords = computed(() => dayRecords.value.filter((x) => x.businessDate === selectedDate.value))
 const newDiagnosisCount = computed(() => arrivalRecords.value.filter((x) => x.diagnosisType === '新诊').length)
@@ -949,7 +956,7 @@ watch(currentRole, () => {
   if (!canViewDailyReports.value && activePage.value === 'dailyReports') activePage.value = 'workbench'
   if (!canViewDealReports.value && activePage.value === 'dealReports') activePage.value = 'workbench'
   if (!canViewSettings.value && activePage.value === 'settings') activePage.value = 'workbench'
-  if (currentRole.value === 'storeManager') selectedStore.value = currentRoleMeta.value.store
+  if (!hasAllStores.value) selectedStore.value = currentRoleMeta.value.store
 })
 watch([selectedDate, selectedStore, diagnosisFilter, keyword, activeStatus, viewMode], () => { currentPage.value = 1 })
 watch([guideVisible, guideStep], async () => {
@@ -973,9 +980,19 @@ function openGuide() {
   guideVisible.value = true
 }
 
-function enterDemo(page = 'workbench') {
-  activePage.value = page
-  showPortal.value = false
+function handleLogin(employee) {
+  currentUser.value = employee
+  currentRole.value = employee.roleKey
+  selectedStore.value = employee.roleKey === 'admin' ? 'all' : employee.store
+  activePage.value = 'workbench'
+  localStorage.setItem(AUTH_KEY, JSON.stringify({ code: employee.code }))
+}
+
+function logout() {
+  localStorage.removeItem(AUTH_KEY)
+  currentUser.value = null
+  currentRole.value = ''
+  activePage.value = 'workbench'
 }
 
 function positionGuidePointer() {
@@ -1046,7 +1063,28 @@ function handleConfigChange(config) {
   stores.splice(0, stores.length, ...config.stores)
   departments.splice(0, departments.length, ...config.departments)
   projectCatalog.splice(0, projectCatalog.length, ...config.projectCatalog)
+  if (config.staff) employees.value = ensureAdminEmployee(config.staff)
+  if (config.roles) roleDefinitions.value = ensureReportPermissions(config.roles)
   localStorage.setItem(CONFIG_KEY, JSON.stringify({ stores: [...stores], departments: [...departments], projectCatalog: JSON.parse(JSON.stringify(projectCatalog)) }))
+}
+
+function ensureAdminEmployee(rows) {
+  const normalized = rows.map((row) => ({ ...row, label: row.roleLabel || row.label || row.roleKey }))
+  if (!normalized.some((row) => row.roleKey === 'admin')) normalized.push({ code: 'admin', name: 'admin', store: '总部', department: '平台管理', roleKey: 'admin', roleLabel: 'admin', label: 'admin', status: 'active' })
+  return normalized
+}
+
+function ensureReportPermissions(rows) {
+  return rows.map((role) => {
+    const permissions = JSON.parse(JSON.stringify(role.permissions || {}))
+    ;['dashboard', 'dailyReports', 'dealReports'].forEach((key) => {
+      if (!permissions[key]) permissions[key] = ['view', 'export']
+      else if (!permissions[key].includes('view')) permissions[key].push('view')
+    })
+    if (role.key === 'admin') permissions.settings = permissions.settings?.length ? permissions.settings : ['view', 'edit']
+    if (role.key === 'storeManager') permissions.settings = permissions.settings?.length ? permissions.settings : ['view', 'edit']
+    return { ...role, label: role.key === 'admin' ? 'admin' : role.label, permissions }
+  })
 }
 
 
@@ -1302,7 +1340,7 @@ function buildInitialLogs(id, status, index) {
     const to = route[step + 1]
     logs.push({
       id: `${id}-${from}`, time: `${today} ${String(8 + Math.floor((step + 1) / 2)).padStart(2, '0')}:${step % 2 ? '30' : '15'}`,
-      operator: `${roles.find((role) => role.value === statusMeta[from].owner)?.label || '员工'}·演示人员`,
+      operator: `${roles.value.find((role) => role.value === statusMeta[from].owner)?.label || '员工'}·演示人员`,
       action: actionNames[from], detail: `${actionNames[from]}已完成，业务进入${statusMeta[to].label}`,
       fromStatus: from, toStatus: to, type: to === 'completed' ? 'success' : 'primary'
     })
