@@ -628,10 +628,10 @@ const projectCatalog = reactive(savedConfig?.projectCatalog || [
 const workflowLegend = ['市场邀约', '客服接待', '管家分诊', '总监排诊', '客服回访']
 
 const defaultEmployees = [
-  ['E0001','苏晴','科臻澳总店','市场','market'],['E0002','顾妍','科臻澳总店','客服','service'],['E0003','安然','科臻澳总店','管家','butler'],['E0004','林珊','科臻澳总店','总监','director'],['E0005','周店长','科臻澳总店','店长','storeManager'],['admin','admin','总部','admin','admin']
+  ['E0001','苏晴','科臻澳总店','市场','market'],['E0002','顾妍','科臻澳总店','客服','service'],['E0003','安然','科臻澳总店','管家','butler'],['E0004','林珊','科臻澳总店','总监','director'],['E0005','周店长','科臻澳总店','店长','storeManager'],['E0009','叶老师','科臻澳总店','卡姐','cardConsultant'],['E0010','乔老师','科臻澳总店','美导','beautyConsultant'],['E0011','韩经理','科臻澳总店','经理','manager'],['admin','admin','总部','admin','admin']
 ].map(([code,name,store,roleLabel,roleKey])=>({code,name,store,roleLabel,roleKey,status:'active',label:roleLabel}))
 const defaultRoles = [
-  ['market','市场','本人'],['service','客服','本人'],['butler','管家','本人'],['director','总监','本人'],['storeManager','店长','本店'],['admin','admin','全部门店']
+  ['market','市场','本人'],['service','客服','本人'],['butler','管家','本人'],['cardConsultant','卡姐','本人'],['beautyConsultant','美导','本人'],['manager','经理','本人'],['director','总监','本店'],['storeManager','店长','本店'],['admin','admin','全部门店']
 ].map(([key,label,dataScope])=>({key,label,dataScope,permissions:{workbench:['view','edit'],customers:['view'],appointments:['view'],dashboard:['view','export'],dailyReports:['view','export'],dealReports:['view','export'],...(key==='storeManager'?{settings:['view','edit']}:{}),...(key==='admin'?{settings:['view','edit']}: {})}}))
 const savedSettings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null')
 const employees = ref(ensureAdminEmployee(savedSettings?.staff || defaultEmployees))
@@ -794,7 +794,7 @@ function initialRecords() {
       revenue: status === 'completed' ? 12800 : 0,
       cardAmount: status === 'followup' ? 6800 : 0,
       note: index === 3 ? '主顾客与同行顾客希望分开面诊' : '',
-      assignments: { market: '苏晴', service: '顾妍', butler: '安然', director: '林珊', manager: '周店长' },
+      assignments: { market: '苏晴', service: '顾妍', butler: '安然', director: '林珊', manager: '韩经理' },
       storeManager: x[7] === '科臻澳总店' ? '周店长' : x[7] === '金水形象店' ? '林经理' : '许经理',
       department: index % 2 ? '皮肤管理科' : '抗衰中心',
       followupDate: addDays(today, 1),
@@ -810,7 +810,7 @@ function createHistoricalRecords() {
   const projects = projectCatalog.flatMap((group) => group.options)
   const statuses = ['completed', 'completed', 'completed', 'followup', 'service', 'scheduling', 'triage', 'reception', 'cancelled']
   const staffByStore = {
-    科臻澳总店: { market: '苏晴', service: '顾妍', butler: '安然', director: '林珊', manager: '周店长' },
+    科臻澳总店: { market: '苏晴', service: '顾妍', butler: '安然', director: '林珊', manager: '韩经理' },
     金水形象店: { market: '秦悦', service: '宋佳', butler: '夏薇', director: '顾宁', manager: '林经理' },
     东区旗舰店: { market: '叶青', service: '唐欣', butler: '温然', director: '许诺', manager: '许经理' }
   }
@@ -900,7 +900,8 @@ const hasAllStores = computed(() => currentRole.value === 'admin' || currentRole
 function recordInScope(record) {
   if (currentRole.value === 'admin') return true
   if (['storeManager', 'director'].includes(currentRole.value)) return record.store === currentRoleMeta.value.store
-  return record.assignments?.[currentRole.value] === currentRoleMeta.value.name
+  const owner = currentRole.value === 'cardConsultant' ? record.cardConsultant : currentRole.value === 'beautyConsultant' ? record.beautyConsultant : record.assignments?.[currentRole.value]
+  return owner === currentRoleMeta.value.name
 }
 const scopedRecords = computed({ get: () => records.value.filter(recordInScope), set: (value) => { records.value = value } })
 const dashboardRecords = computed(() => [...historicalRecords, ...records.value].filter(recordInScope))
@@ -1070,12 +1071,16 @@ function handleConfigChange(config) {
 
 function ensureAdminEmployee(rows) {
   const normalized = rows.map((row) => ({ ...row, label: row.roleLabel || row.label || row.roleKey }))
-  if (!normalized.some((row) => row.roleKey === 'admin')) normalized.push({ code: 'admin', name: 'admin', store: '总部', department: '平台管理', roleKey: 'admin', roleLabel: 'admin', label: 'admin', status: 'active' })
+  defaultEmployees.forEach((employee) => {
+    if (!normalized.some((row) => row.code === employee.code || row.roleKey === employee.roleKey)) normalized.push({ ...employee, department: employee.roleLabel === '卡姐' ? '客户管理部' : employee.roleLabel === '美导' ? '运营部' : employee.roleLabel === '经理' ? '管理部' : '' })
+  })
   return normalized
 }
 
 function ensureReportPermissions(rows) {
-  return rows.map((role) => {
+  const normalized = rows.map((role) => JSON.parse(JSON.stringify(role)))
+  defaultRoles.forEach((role) => { if (!normalized.some((item) => item.key === role.key)) normalized.push(JSON.parse(JSON.stringify(role))) })
+  return normalized.map((role) => {
     const permissions = JSON.parse(JSON.stringify(role.permissions || {}))
     ;['dashboard', 'dailyReports', 'dealReports'].forEach((key) => {
       if (!permissions[key]) permissions[key] = ['view', 'export']
@@ -1423,7 +1428,7 @@ function createAppointmentSamples() {
       revenue: item.status === 'completed' ? 6800 + index * 300 : 0,
       cardAmount: 0,
       note: '预约日历演示案例',
-      assignments: { market: '苏晴', service: '顾妍', butler: '安然', director: '林珊', manager: '周店长' },
+      assignments: { market: '苏晴', service: '顾妍', butler: '安然', director: '林珊', manager: '韩经理' },
       storeManager: '周店长',
       department: index % 2 ? '皮肤管理科' : '抗衰中心',
       followupDate: addDays(date, 1),
