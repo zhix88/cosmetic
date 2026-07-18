@@ -561,12 +561,13 @@ h1, h2, h3, p { margin: 0; }
 .appointment-timeline::-webkit-scrollbar { width: 6px; }
 .appointment-timeline::-webkit-scrollbar-thumb { border-radius: 8px; background: #c8ccda; }
 .appointment-timeline::-webkit-scrollbar-track { background: transparent; }
-.appointment-timeline > article { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 9px; }
+.appointment-timeline > article { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 9px; }
 .appointment-timeline > article.cancelled { opacity: .58; }
-.timeline-time { position: relative; padding-top: 4px; text-align: right; }
-.timeline-time strong { font-size: 11px; }
-.timeline-time span { position: absolute; top: 23px; right: 6px; bottom: -12px; width: 1px; background: #e1e4eb; }
-.timeline-time::after { position: absolute; top: 18px; right: 2px; width: 8px; height: 8px; content: ""; border: 2px solid #fff; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 1px #c9c8ed; }
+.timeline-time { position: relative; min-width: 0; padding: 4px 24px 0 0; text-align: right; }
+.timeline-time strong { display: block; overflow: hidden; font-size: 11px; line-height: 18px; white-space: nowrap; }
+.timeline-time span { position: absolute; top: 23px; right: 7px; bottom: -12px; width: 1px; background: #e1e4eb; }
+.timeline-time::after { position: absolute; top: 18px; right: 3px; width: 8px; height: 8px; content: ""; border: 2px solid #fff; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 1px #c9c8ed; }
+.appointment-timeline > article:last-child .timeline-time span { display: none; }
 .appointment-item { margin-bottom: 12px; padding: 12px; border: 1px solid #e8eaf0; border-radius: 10px; background: #fff; cursor: pointer; transition: border-color .18s, box-shadow .18s, transform .18s; }
 .appointment-item:hover { border-color: #a9a7ec; box-shadow: 0 7px 18px rgba(72,68,151,.09); transform: translateY(-1px); }
 .appointment-item:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -649,17 +650,12 @@ h1, h2, h3, p { margin: 0; }
 .org-summary strong { display: block; margin-top: 5px; font-size: 21px; }
 .org-summary.horizontal { grid-template-columns: repeat(4, 1fr); margin: 16px 0; }
 .org-tree-table { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
-.org-tree-table td:first-child .cell { display: flex; align-items: center; min-height: 42px; }
+.org-tree-table td:first-child .cell { display: flex; align-items: center; min-height: 42px; padding-left: 0; }
 .org-tree-table td:first-child .el-table__indent { flex: 0 0 auto; }
-.org-tree-table td:first-child .el-table__expand-icon { flex: 0 0 20px; display: inline-flex; align-items: center; justify-content: center; margin-right: 3px; }
-.org-name-cell { position: relative; display: flex; align-items: center; gap: 9px; min-height: 32px; }
-.org-name-cell.level-region { margin-left: 2px; }
-.org-name-cell.level-store { margin-left: 12px; }
-.org-name-cell.level-department { margin-left: 24px; }
-.org-level-line { position: absolute; top: -23px; bottom: 16px; left: -14px; width: 14px; border-left: 1px solid #d8dce7; border-bottom: 1px solid #d8dce7; border-radius: 0 0 0 5px; pointer-events: none; }
-.org-name-cell.level-store .org-level-line { left: -18px; width: 18px; }
-.org-name-cell.level-department .org-level-line { left: -20px; width: 20px; }
-.org-type { min-width: 38px; padding: 3px 6px; border-radius: 5px; text-align: center; color: #747b8d; background: #f0f2f6; font-size: 9px; font-weight: 600; }
+.org-tree-table td:first-child .el-table__expand-icon { flex: 0 0 20px; display: inline-flex; align-items: center; justify-content: center; margin-right: 4px; }
+.org-name-cell { display: flex; align-items: center; gap: 8px; min-height: 32px; min-width: 0; }
+.org-name-cell strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.org-type { width: 38px; flex: 0 0 38px; padding: 3px 6px; border-radius: 5px; text-align: center; color: #747b8d; background: #f0f2f6; font-size: 9px; font-weight: 600; line-height: 15px; }
 .org-type.company { color: #fff; background: #343850; }
 .org-type.region { color: #655ed0; background: #eeeeff; }
 .org-type.store { color: #168667; background: #e8f7f2; }

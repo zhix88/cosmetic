@@ -14,7 +14,7 @@
             <article><p>区域</p><strong>{{ orgRegions.length }}</strong></article><article><p>门店</p><strong>{{ flatStores.length }}</strong></article><article><p>部门节点</p><strong>{{ departmentNodeCount }}</strong></article><article><p>在职员工</p><strong>{{ staff.filter(x => x.status === 'active').length }}</strong></article>
           </div>
           <el-table :data="orgTreeRows" row-key="id" default-expand-all :tree-props="{ children: 'children' }" class="org-tree-table">
-            <el-table-column prop="name" label="组织名称" min-width="300"><template #default="{ row }"><div :class="`org-name-cell level-${row.type}`"><i v-if="row.type !== 'company'" class="org-level-line"></i><span :class="`org-type ${row.type}`">{{ orgTypeLabel(row.type) }}</span><strong>{{ row.name }}</strong></div></template></el-table-column>
+            <el-table-column prop="name" label="组织名称" min-width="300"><template #default="{ row }"><div :class="`org-name-cell level-${row.type}`"><span :class="`org-type ${row.type}`">{{ orgTypeLabel(row.type) }}</span><strong>{{ row.name }}</strong></div></template></el-table-column>
             <el-table-column prop="manager" label="负责人" width="110"><template #default="{ row }">{{ row.manager || '—' }}</template></el-table-column>
             <el-table-column prop="phone" label="联系电话" width="135"><template #default="{ row }">{{ row.phone || '—' }}</template></el-table-column>
             <el-table-column label="员工数" width="85" align="center"><template #default="{ row }">{{ orgHeadcount(row) }}</template></el-table-column>
@@ -34,7 +34,7 @@
             </aside>
             <section class="staff-list-panel">
               <div class="staff-scope-head"><div><span>当前组织</span><strong>{{ selectedStaffNode?.label || '全部组织' }}</strong></div><el-tag type="info">{{ filteredStaff.length }}名员工</el-tag></div>
-              <div class="settings-filters"><el-input v-model="search" placeholder="搜索姓名、工号或手机号" clearable /><el-select v-model="statusFilter"><el-option label="全部状态" value="all" /><el-option label="在职" value="active" /><el-option label="离职/停用" value="disabled" /></el-select><el-button @click="exportCsv('staff')">导出</el-button><el-button @click="importVisible = true">导入</el-button></div>
+              <div class="settings-filters"><el-input v-model="search" placeholder="搜索姓名、工号或手机号" clearable /><el-select v-model="statusFilter"><el-option label="全部状态" value="all" /><el-option label="在职" value="active" /><el-option label="离职/停用" value="disabled" /></el-select><el-select v-model="staffRoleFilter"><el-option label="全部角色" value="all" /><el-option v-for="item in roles" :key="item.key" :label="item.label" :value="item.key" /></el-select><el-date-picker v-model="hireDateRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="入职开始日期" end-placeholder="入职结束日期" /><el-button @click="exportCsv('staff')">导出</el-button><el-button @click="importVisible = true">导入</el-button></div>
               <el-table :data="pagedStaff" stripe>
                 <el-table-column prop="code" label="工号" width="90" /><el-table-column label="员工" width="125"><template #default="{ row }"><strong>{{ row.name }}</strong><small class="table-subline">{{ row.gender || '未填写' }} · {{ row.age || ageFromBirthday(row.birthday) || '—' }}岁</small></template></el-table-column><el-table-column prop="phone" label="手机号" width="125" /><el-table-column prop="store" label="主门店" min-width="130" /><el-table-column prop="department" label="主部门" width="110" /><el-table-column prop="roleLabel" label="角色" width="90" /><el-table-column label="从业年限" width="90" align="center"><template #default="{ row }">{{ row.yearsExperience || 0 }}年</template></el-table-column><el-table-column prop="hireDate" label="入职日期" width="110"><template #default="{ row }">{{ row.hireDate || '—' }}</template></el-table-column><el-table-column label="状态" width="80"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status === 'active' ? '在职' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="190" fixed="right"><template #default="{ row }"><el-button link @click="showStaffDetail(row)">详情</el-button><el-button link type="primary" @click="openEntity('staff', row)">编辑</el-button><el-button link :type="row.status === 'active' ? 'warning' : 'success'" @click="toggleStatus(row)">{{ row.status === 'active' ? '停用' : '启用' }}</el-button></template></el-table-column>
               </el-table>
@@ -232,6 +232,8 @@ const activeModule = ref('org')
 const search = ref('')
 const storeFilter = ref('all')
 const statusFilter = ref('all')
+const staffRoleFilter = ref('all')
+const hireDateRange = ref([])
 const categoryFilter = ref('all')
 const materialCategoryFilter = ref('all')
 const logModule = ref('all')
@@ -318,7 +320,7 @@ const selectedRuleNode = computed(() => {
 })
 const selectedStaffNode = computed(() => findTreeNode(staffOrgTree.value,selectedStaffNodeId.value))
 const departmentNodeCount = computed(() => flatStores.value.reduce((sum,x)=>sum+(x.departments?.length||0),0))
-const filteredStaff = computed(() => staff.filter(x => allowedStores.value.includes(x.store) && staffMatchesNode(x,selectedStaffNode.value) && (statusFilter.value==='all'||x.status===statusFilter.value) && matches(x,[x.name,x.code,x.phone])))
+const filteredStaff = computed(() => staff.filter(x => allowedStores.value.includes(x.store) && staffMatchesNode(x,selectedStaffNode.value) && (statusFilter.value==='all'||x.status===statusFilter.value) && (staffRoleFilter.value==='all'||x.roleKey===staffRoleFilter.value) && hireDateMatches(x.hireDate) && matches(x,[x.name,x.code,x.phone])))
 const filteredProjects = computed(() => projects.filter(x => (categoryFilter.value==='all'||x.category===categoryFilter.value) && matches(x,[x.name,x.code])))
 const filteredPerformanceConfigs = computed(() => performanceConfigs.filter(x => (performanceRoleFilter.value==='all'||x.roleKey===performanceRoleFilter.value) && (performanceCategoryFilter.value==='all'||x.projectCategory===performanceCategoryFilter.value) && matches(x,[performanceRoleLabel(x.roleKey),x.projectCategory,x.note])))
 const allowedMaterials = computed(() => materials.filter(x => x.stores.some(s => allowedStores.value.includes(s))))
@@ -355,7 +357,7 @@ const performanceRules = { roleKey:[{required:true,message:'请选择用户角�
 
 watch([orgRegions,staff,projects,roles,performanceConfigs,storeRules,dictionaries,auditLogs],persistSettings,{deep:true})
 watch([materials,batches,inventoryLogs,materialTemplates],persistInventory,{deep:true})
-watch([activeModule, search, storeFilter, statusFilter, categoryFilter, performanceRoleFilter, performanceCategoryFilter, materialCategoryFilter, logModule, inventoryTab],()=>{listPage.value=1})
+watch([activeModule, search, storeFilter, statusFilter, staffRoleFilter, hireDateRange, categoryFilter, performanceRoleFilter, performanceCategoryFilter, materialCategoryFilter, logModule, inventoryTab],()=>{listPage.value=1})
 
 function persistSettings(){localStorage.setItem(SETTINGS_KEY,JSON.stringify({orgRegions,staff,projects,roles,performanceConfigs,storeRules,dictionaries,auditLogs}));emitConfig()}
 function persistInventory(){localStorage.setItem(INVENTORY_KEY,JSON.stringify({materials,batches,inventoryLogs,materialTemplates}))}
@@ -380,6 +382,7 @@ function ruleForStore(store){return storeRules[store]||currentStoreRule.value}
 function selectRuleNode(data){if(!['store','department'].includes(data.type))return;selectedRuleNodeId.value=data.id;ruleStore.value=data.storeName}
 function findTreeNode(rows,id){for(const row of rows){if(row.id===id)return row;const found=findTreeNode(row.children||[],id);if(found)return found}return null}
 function staffMatchesNode(employee,node){if(!node||node.type==='company')return true;if(node.type==='region')return node.storeNames.includes(employee.store);if(node.type==='store')return employee.store===node.storeName;return employee.store===node.storeName&&employee.department===node.departmentName}
+function hireDateMatches(hireDate){if(!hireDateRange.value?.length)return true;const [start,end]=hireDateRange.value;return Boolean(hireDate)&&hireDate>=start&&hireDate<=end}
 function staffNodeCount(node){return staff.filter(employee=>allowedStores.value.includes(employee.store)&&staffMatchesNode(employee,node)).length}
 function selectStaffNode(data){selectedStaffNodeId.value=data.id;listPage.value=1}
 function toggleStatus(row){row.status=row.status==='active'?'disabled':'active';addAudit('staff',row.status==='active'?'启用员工':'停用员工',row.name,`状态调整为${row.status}`)}

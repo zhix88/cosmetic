@@ -287,6 +287,7 @@
         :role="currentRole"
         :role-meta="currentRoleMeta"
         :stores="stores"
+        :staff-options="employees"
         :project-catalog="projectCatalog"
         :focus-phone="customerFocus.phone"
         :focus-request="customerFocus.request"
@@ -298,6 +299,7 @@
         :role="currentRole"
         :role-meta="currentRoleMeta"
         :stores="stores"
+        :staff-options="employees"
         :project-catalog="projectCatalog"
         @open-record="openDetail"
         @open-import="batchImportVisible=true"
@@ -380,6 +382,7 @@
         </div>
 
         <div class="drawer-footer">
+          <el-button v-if="canManage(activeRecord)" @click="openCommonDialog('staff', activeRecord)">设置人员归属</el-button>
           <el-button v-if="canManage(activeRecord)" @click="openCommonDialog('revenue', activeRecord)">编辑业绩</el-button>
           <el-button v-if="canOperate(activeRecord)" type="primary" @click="openNodeDialog(activeRecord)">
             {{ actionLabel(activeRecord.status) }}
@@ -501,6 +504,17 @@
           <el-form-item label="新的到店日期" prop="date"><el-date-picker v-model="commonForm.date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
           <el-form-item label="新的到店时间" prop="time"><el-time-select v-model="commonForm.time" start="08:00" step="00:30" end="20:00" /></el-form-item>
           <el-form-item label="改期原因" prop="reason"><el-input v-model="commonForm.reason" type="textarea" /></el-form-item>
+        </template>
+        <template v-else-if="commonAction === 'staff'">
+          <div class="form-grid">
+            <el-form-item label="卡姐"><el-select v-model="commonForm.cardConsultant" clearable><el-option v-for="employee in staffOptions('cardConsultant')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
+            <el-form-item label="美导"><el-select v-model="commonForm.beautyConsultant" clearable><el-option v-for="employee in staffOptions('beautyConsultant')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
+            <el-form-item label="市场"><el-select v-model="commonForm.market" clearable><el-option v-for="employee in staffOptions('market')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
+            <el-form-item label="客服"><el-select v-model="commonForm.service" clearable><el-option v-for="employee in staffOptions('service')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
+            <el-form-item label="管家"><el-select v-model="commonForm.butler" clearable><el-option v-for="employee in staffOptions('butler')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
+            <el-form-item label="经理"><el-select v-model="commonForm.manager" clearable><el-option v-for="employee in staffOptions('manager')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
+            <el-form-item label="总监"><el-select v-model="commonForm.director" clearable><el-option v-for="employee in staffOptions('director')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
+          </div>
         </template>
         <template v-else>
           <el-alert v-if="commonAction === 'rollback'" title="业务将退回上一节点，原操作记录会保留。" type="warning" :closable="false" show-icon />
@@ -948,7 +962,7 @@ const nodeDialogTitle = computed(() => ({
   scheduling: '排诊安排', service: '结束服务', followup: '顾客回访'
 }[dialogStatus.value] || '节点处理'))
 const commonDialogTitle = computed(() => ({
-  revenue: '编辑消费与业绩', reschedule: '业务改期', rollback: '退回上一节点', cancel: '取消业务'
+  revenue: '编辑消费与业绩', reschedule: '业务改期', rollback: '退回上一节点', cancel: '取消业务', staff: '设置人员归属'
 }[commonAction.value]))
 
 watch(records, (value) => localStorage.setItem(STORAGE_KEY, JSON.stringify(value)), { deep: true })
@@ -1185,7 +1199,9 @@ function openCommonDialog(action, record) {
     paymentType: record.paymentType || 'none', revenue: record.revenue || 0,
     cardAmount: record.cardAmount || 0,
     projects: [...(record.projects || [record.estimatedProject].filter(Boolean))],
-    date: record.businessDate, time: record.appointmentTime, reason: ''
+    date: record.businessDate, time: record.appointmentTime, reason: '',
+    cardConsultant: record.cardConsultant || '', beautyConsultant: record.beautyConsultant || '',
+    market: record.assignments?.market || '', service: record.assignments?.service || '', butler: record.assignments?.butler || '', manager: record.assignments?.manager || '', director: record.assignments?.director || ''
   })
   commonDialogVisible.value = true
   nextTick(() => commonFormRef.value?.clearValidate())
@@ -1203,6 +1219,13 @@ async function submitCommon() {
     record.projects = [...commonForm.projects]
     record.estimatedProject = commonForm.projects.join('、')
     addLog(record, '更新消费业绩', `${paymentLabel(record)}${commonForm.reason ? `；${commonForm.reason}` : ''}`, from, from)
+  }
+  if (commonAction.value === 'staff') {
+    record.cardConsultant = commonForm.cardConsultant
+    record.beautyConsultant = commonForm.beautyConsultant
+    record.assignments ||= {}
+    ;['market', 'service', 'butler', 'manager', 'director'].forEach((role) => { record.assignments[role] = commonForm[role] })
+    addLog(record, '设置人员归属', `卡姐：${record.cardConsultant || '未分配'}；美导：${record.beautyConsultant || '未分配'}；经理：${record.assignments.manager || '未分配'}`, from, from)
   }
   if (commonAction.value === 'reschedule') {
     record.businessDate = commonForm.date
@@ -1230,6 +1253,10 @@ function addLog(record, action, detail, fromStatus, toStatus, type = 'primary') 
     id: `${record.id}-${Date.now()}`, time: nowText(), operator: `${currentRoleMeta.value.label}·${currentRoleMeta.value.name}`,
     action, detail, fromStatus, toStatus, type
   })
+}
+
+function staffOptions(roleKey) {
+  return employees.value.filter((employee) => employee.status === 'active' && employee.roleKey === roleKey)
 }
 
 async function resetData() {

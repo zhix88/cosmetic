@@ -109,8 +109,11 @@
           <el-form-item label="诊疗类型" prop="diagnosisType"><el-radio-group v-model="createForm.diagnosisType"><el-radio value="新诊">新诊</el-radio><el-radio value="复诊">复诊</el-radio></el-radio-group></el-form-item>
           <el-form-item label="预约日期" prop="date"><el-date-picker v-model="createForm.date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
           <el-form-item label="预约时间" prop="time"><el-time-select v-model="createForm.time" start="08:00" step="00:30" end="20:00" /></el-form-item>
-          <el-form-item label="市场负责人" prop="market"><el-select v-model="createForm.market" :disabled="role === 'market'"><el-option v-for="person in marketPeople" :key="person" :label="person" :value="person" /></el-select></el-form-item>
           <el-form-item label="预约项目" prop="projects"><el-select v-model="createForm.projects" multiple filterable allow-create><el-option-group v-for="group in projectCatalog" :key="group.label" :label="group.label"><el-option v-for="project in group.options" :key="project" :label="project" :value="project" /></el-option-group></el-select></el-form-item>
+        </div>
+        <el-divider content-position="left">人员归属</el-divider>
+        <div class="appointment-form-grid">
+          <el-form-item v-for="roleItem in ownerRoles" :key="roleItem.key" :label="roleItem.label"><el-select v-model="createForm[roleItem.key]" clearable placeholder="请选择员工" :disabled="role === roleItem.key"><el-option v-for="employee in staffOptionsFor(roleItem.key)" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
         </div>
         <el-form-item label="备注"><el-input v-model="createForm.note" type="textarea" :rows="3" /></el-form-item>
       </el-form>
@@ -211,6 +214,7 @@ const props = defineProps({
   role: { type: String, required: true },
   roleMeta: { type: Object, required: true },
   stores: { type: Array, required: true },
+  staffOptions: { type: Array, default: () => [] },
   projectCatalog: { type: Array, required: true }
 })
 const emit = defineEmits(['update:records', 'open-record', 'open-import'])
@@ -246,6 +250,12 @@ const inviteForm = reactive({})
 const actionForm = reactive({})
 const customerDetailVisible = ref(false)
 const detailCustomer = ref(null)
+const ownerRoles = [
+  { key: 'cardConsultant', label: '卡姐' }, { key: 'beautyConsultant', label: '美导' },
+  { key: 'market', label: '市场' }, { key: 'service', label: '客服' },
+  { key: 'butler', label: '管家' }, { key: 'manager', label: '经理' },
+  { key: 'director', label: '总监' }, { key: 'storeManager', label: '店长' }
+]
 const canEdit = computed(() => ['market','storeManager','admin'].includes(props.role))
 const calendarYear = computed(() => Number(viewMonth.value.slice(0,4)))
 const calendarMonth = computed(() => Number(viewMonth.value.slice(5,7)))
@@ -342,8 +352,12 @@ function shiftMonth(delta) { const date = new Date(`${viewMonth.value}-01T12:00:
 function goToday() { viewMonth.value = today.slice(0,7); selectedDate.value = today }
 function selectDate(date) { selectedDate.value = date; if (!date.startsWith(viewMonth.value)) viewMonth.value = date.slice(0,7) }
 function openCreate(date = selectedDate.value) {
+  const store = props.role === 'admin' ? props.stores[0] : props.roleMeta.store
   Object.keys(createForm).forEach((key) => delete createForm[key])
-  Object.assign(createForm, { customerName: '', customerPhone: '', companionName: '', companionPhone: '', store: props.role === 'admin' ? props.stores[0] : props.roleMeta.store, diagnosisType: '新诊', date, time: '10:00', market: props.role === 'market' ? props.roleMeta.name : marketPeople.value[0], projects: [], note: '' })
+  Object.assign(createForm, {
+    customerName: '', customerPhone: '', companionName: '', companionPhone: '', store, diagnosisType: '新诊', date, time: '10:00', projects: [], note: '',
+    ...Object.fromEntries(ownerRoles.map(({ key }) => [key, defaultOwner(key, store)]))
+  })
   createVisible.value = true
 }
 async function saveAppointment() {
@@ -360,9 +374,10 @@ async function saveAppointment() {
   const record = {
     id, businessDate: createForm.date, appointmentTime: createForm.time, diagnosisType: createForm.diagnosisType, store: createForm.store,
     vip1: { name: createForm.customerName, phone: createForm.customerPhone }, vip2: createForm.companionName ? { name: createForm.companionName, phone: createForm.companionPhone } : null,
-    cardConsultant: '', beautyConsultant: '', estimatedProject: createForm.projects.join('、'), projects: [...createForm.projects],
+    cardConsultant: createForm.cardConsultant, beautyConsultant: createForm.beautyConsultant, estimatedProject: createForm.projects.join('、'), projects: [...createForm.projects],
     estimatedAmount: 0, paymentType: 'none', revenue: 0, cardAmount: 0, note: createForm.note,
-    assignments: { market: createForm.market, service: '顾妍', butler: '安然', director: '林珊', manager: createForm.store === '科臻澳总店' ? '周店长' : createForm.store === '金水形象店' ? '林经理' : '许经理' },
+    assignments: { market: createForm.market, service: createForm.service, butler: createForm.butler, director: createForm.director, manager: createForm.manager },
+    storeManager: createForm.storeManager,
     department: '', followupDate: addDays(createForm.date, 1), status: 'invited', appointmentStatus: 'pending', flags: [],
     logs: [{ id: `${id}-created`, time: nowText(), operator: `${props.roleMeta.label}·${props.roleMeta.name}`, action: '创建预约', detail: `预约${createForm.date} ${createForm.time}到店`, fromStatus: 'invited', toStatus: 'invited', type: 'primary' }]
   }
@@ -371,6 +386,13 @@ async function saveAppointment() {
   selectedDate.value = createForm.date
   viewMonth.value = createForm.date.slice(0,7)
   ElMessage.success('预约已创建，并同步到工作台和顾客档案')
+}
+function staffOptionsFor(roleKey) {
+  return props.staffOptions.filter((employee) => employee.status === 'active' && employee.roleKey === roleKey && employee.store === createForm.store)
+}
+function defaultOwner(roleKey, store) {
+  if (props.role === roleKey) return props.roleMeta.name
+  return props.staffOptions.find((employee) => employee.status === 'active' && employee.roleKey === roleKey && employee.store === store)?.name || ''
 }
 function openInvite(record) { editingId.value = record.id; Object.assign(inviteForm, { result: '', note: '' }); inviteVisible.value = true }
 async function submitInvite() {

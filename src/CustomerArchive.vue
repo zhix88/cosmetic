@@ -107,6 +107,12 @@
               </dl>
             </div>
             <div class="archive-section">
+              <h3>人员归属</h3>
+              <dl class="archive-detail-grid">
+                <div v-for="roleItem in ownerRoles" :key="roleItem.key"><dt>{{ roleItem.label }}</dt><dd>{{ activeCustomer.owners?.[roleItem.key] || '未分配' }}</dd></div>
+              </dl>
+            </div>
+            <div class="archive-section">
               <h3>服务偏好与铺垫</h3>
               <dl class="archive-notes">
                 <div><dt>特殊喜好</dt><dd>{{ activeCustomer.preferences || '暂无记录' }}</dd></div>
@@ -178,6 +184,9 @@
           <el-form-item label="顾客来源"><el-input v-model="customerForm.source" /></el-form-item>
           <el-form-item label="特殊喜好"><el-input v-model="customerForm.preferences" /></el-form-item>
         </div>
+        <div class="archive-form-grid customer-owner-form">
+          <el-form-item v-for="roleItem in ownerRoles" :key="roleItem.key" :label="roleItem.label"><el-select v-model="customerForm.owners[roleItem.key]" clearable placeholder="请选择员工"><el-option v-for="employee in staffOptionsFor(roleItem.key)" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
+        </div>
         <el-form-item label="禁忌事项"><el-input v-model="customerForm.taboos" type="textarea" :rows="2" /></el-form-item>
         <el-form-item label="铺垫内容"><el-input v-model="customerForm.preparation" type="textarea" :rows="3" /></el-form-item>
         <el-form-item label="内部备注"><el-input v-model="customerForm.note" type="textarea" :rows="2" /></el-form-item>
@@ -234,14 +243,16 @@ const props = defineProps({
   role: { type: String, required: true },
   roleMeta: { type: Object, required: true },
   stores: { type: Array, required: true },
-  projectCatalog: { type: Array, required: true }
-  ,focusPhone: { type: String, default: '' }
-  ,focusRequest: { type: Number, default: 0 }
+  staffOptions: { type: Array, default: () => [] },
+  projectCatalog: { type: Array, required: true },
+  focusPhone: { type: String, default: '' },
+  focusRequest: { type: Number, default: 0 }
 })
 defineEmits(['open-record'])
 
 const STORAGE_KEY = 'cosmetic-customer-archive-v1'
 const memberLevels = ['普通会员', '银卡', '金卡', '铂金', '黑金']
+const ownerRoles = [{ key: 'cardConsultant', label: '卡姐' }, { key: 'beautyConsultant', label: '美导' }, { key: 'market', label: '市场' }, { key: 'service', label: '客服' }, { key: 'butler', label: '管家' }, { key: 'manager', label: '经理' }, { key: 'director', label: '总监' }]
 const keyword = ref('')
 const storeFilter = ref(props.role === 'admin' ? 'all' : props.roleMeta.store)
 const levelFilter = ref('all')
@@ -347,7 +358,7 @@ function mergeBusinessCustomers(existing, records) {
           id: `C${phone.slice(-6)}`, name: person.name, phone, gender: '女', birthday: '',
           store: record.store, source: index === 0 ? 'VIP1业务同步' : 'VIP2同行同步',
           memberLevel: recordAmount(record) >= 10000 ? '金卡' : '普通会员', status: 'active',
-          preferences: '', taboos: '', preparation: '', note: '', balance: 0,
+          preferences: '', taboos: '', preparation: '', note: '', owners: ownerSnapshot(record), balance: 0,
           points: Math.round(recordAmount(record) / 10), packages: seedPackages(record),
           createdAt: nowText(), logs: [makeLog('自动建档', `由${index === 0 ? 'VIP1' : 'VIP2'}业务单 ${record.id} 自动生成`, 'success')]
         })
@@ -362,6 +373,9 @@ function mergeBusinessCustomers(existing, records) {
   map.forEach((customer) => {
     const related = records.filter((record) => [record.vip1, record.vip2].filter(Boolean).some((person) => normalizePhone(person.phone) === normalizePhone(customer.phone)))
     customer.lastVisit = related.map((record) => record.businessDate).sort().at(-1) || customer.lastVisit || ''
+    customer.owners ||= {}
+    const latestRecord = [...related].sort((a, b) => `${a.businessDate}${a.appointmentTime}`.localeCompare(`${b.businessDate}${b.appointmentTime}`)).at(-1)
+    if (latestRecord) Object.entries(ownerSnapshot(latestRecord)).forEach(([key, value]) => { if (!customer.owners[key] && value) customer.owners[key] = value })
     customer.visitCount = related.length
     customer.totalSpend = related.reduce((sum, record) => sum + recordAmount(record), 0)
     const projectUsage = new Map()
@@ -409,9 +423,9 @@ function openCustomerDetail(customer) {
 function openCustomerForm(customer) {
   editingCustomerId.value = customer?.id || null
   Object.keys(customerForm).forEach((key) => delete customerForm[key])
-  Object.assign(customerForm, customer ? { ...customer } : {
+  Object.assign(customerForm, customer ? { ...customer, owners: { ...(customer.owners || {}) } } : {
     name: '', phone: '', gender: '女', birthday: '', store: props.role === 'admin' ? props.stores[0] : props.roleMeta.store,
-    memberLevel: '普通会员', source: '手工建档', preferences: '', taboos: '', preparation: '', note: ''
+    memberLevel: '普通会员', source: '手工建档', preferences: '', taboos: '', preparation: '', note: '', owners: {}
   })
   customerFormVisible.value = true
 }
@@ -525,6 +539,22 @@ function customerRecords(customer) {
   return props.records.filter((record) => [record.vip1, record.vip2].filter(Boolean).some((person) => normalizePhone(person.phone) === normalizePhone(customer.phone)))
     .sort((a, b) => `${b.businessDate} ${b.appointmentTime}`.localeCompare(`${a.businessDate} ${a.appointmentTime}`))
 }
+function staffOptionsFor(roleKey) {
+  return props.staffOptions.filter((employee) => employee.status === 'active' && employee.roleKey === roleKey)
+}
+
+function ownerSnapshot(record) {
+  return {
+    cardConsultant: record.cardConsultant || '',
+    beautyConsultant: record.beautyConsultant || '',
+    market: record.assignments?.market || '',
+    service: record.assignments?.service || '',
+    butler: record.assignments?.butler || '',
+    manager: record.assignments?.manager || '',
+    director: record.assignments?.director || ''
+  }
+}
+
 function customerSpend(customer) { return customerRecords(customer).reduce((sum, record) => sum + recordAmount(record), 0) }
 function remainingCount(customer) { return (customer.packages || []).reduce((sum, pkg) => sum + Math.max(0, pkg.purchased - pkg.used), 0) }
 function sortedLogs(customer) { return [...(customer.logs || [])].sort((a, b) => b.time.localeCompare(a.time)) }
