@@ -50,6 +50,8 @@
             <el-table-column prop="code" label="编码" width="105" /><el-table-column prop="name" label="项目名称" min-width="140" /><el-table-column prop="category" label="分类" width="100" /><el-table-column prop="department" label="科室" width="110" /><el-table-column prop="price" label="标准价" width="95"><template #default="{ row }">¥{{ money(row.price) }}</template></el-table-column><el-table-column prop="cardPrice" label="耗卡价" width="95"><template #default="{ row }">¥{{ money(row.cardPrice) }}</template></el-table-column><el-table-column prop="duration" label="时长" width="75"><template #default="{ row }">{{ row.duration }}分钟</template></el-table-column><el-table-column label="标准耗材成本" width="120"><template #default="{ row }">¥{{ money(projectMaterialCost(row)) }}</template></el-table-column><el-table-column label="状态" width="80"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status === 'active' ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="150"><template #default="{ row }"><el-button link type="primary" :disabled="!isAdmin" @click="openEntity('project', row)">编辑</el-button><el-button link @click="openMaterialTemplate(row)">耗材模板</el-button></template></el-table-column>
           </el-table>
           <ListPagination :total="filteredProjects.length" v-model="listPage" />
+          <div class="settings-section-head" style="margin-top:24px"><div><h3>活动套餐</h3><p>套餐售价按包含项目总价后的优惠价维护</p></div><el-button type="primary" :disabled="!isAdmin" @click="addActivityPackage">新增活动套餐</el-button></div>
+          <el-table :data="activityPackages" stripe><el-table-column prop="name" label="套餐名称" min-width="150" /><el-table-column label="包含项目与次数" min-width="240"><template #default="{ row }">{{ row.projects.map(x=>`${x.name} × ${x.count}`).join('、') }}</template></el-table-column><el-table-column label="项目总价" width="120"><template #default="{ row }">¥{{ money(row.projects.reduce((sum,x)=>sum+x.count*x.unitPrice,0)) }}</template></el-table-column><el-table-column label="套餐总价" width="120"><template #default="{ row }">¥{{ money(row.packagePrice) }}</template></el-table-column><el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.status==='active'?'success':'info'">{{ row.status==='active'?'启用':'停用' }}</el-tag></template></el-table-column></el-table>
         </template>
 
         <template v-else-if="activeModule === 'performance'">
@@ -291,12 +293,15 @@ const performanceRoleOptions = [
 
 const orgRegions = reactive(saved?.orgRegions || seedOrg())
 const staff = reactive(ensureDemoStaff(saved?.staff || seedStaff()).map(normalizeStaff))
-const projects = reactive(saved?.projects || seedProjects())
+const projects = reactive((saved?.projects || seedProjects()).map(x=>({followupDays:60,...x})))
 const roles = reactive(ensureDemoRoles(saved?.roles || seedRoles()).map(normalizeRole))
 const performanceConfigs = reactive(saved?.performanceConfigs || seedPerformanceConfigs())
 const legacyRule = saved?.rules || { appointmentCapacity: 3, expiryWarningDays: 60, pointsPer100: 10, businessPrefix: 'B' }
 const storeRules = reactive(saved?.storeRules || Object.fromEntries(props.stores.map((store,index)=>[store,{...legacyRule,businessPrefix:index===0?legacyRule.businessPrefix:`B${index+1}`}])) )
 const dictionaries = reactive(saved?.dictionaries || seedDictionaries())
+if (!dictionaries.some(x=>x.key==='tag-consumption')) dictionaries.push({key:'tag-consumption',label:'客户标签：消费力评级',items:['高消费力','中消费力','潜力客户'],newValue:''})
+if (!dictionaries.some(x=>x.key==='tag-satisfaction')) dictionaries.push({key:'tag-satisfaction',label:'客户标签：满意度层级',items:['高度满意','满意','需关注'],newValue:''})
+const activityPackages = reactive(saved?.activityPackages || [{id:'promo-1',name:'焕颜体验套餐',projects:[{name:'面部护理',count:3,unitPrice:980},{name:'水光项目',count:1,unitPrice:2800}],packagePrice:4800,status:'active'}])
 const auditLogs = reactive(saved?.auditLogs || [])
 const materials = reactive(inventorySaved?.materials || seedMaterials())
 const batches = reactive(inventorySaved?.batches || seedBatches())
@@ -355,11 +360,11 @@ const entityRules = { code:[{required:true,message:'请填写编码',trigger:'bl
 const stockRules = { store:[{required:true,message:'请选择门店',trigger:'change'}],targetStore:[{required:true,message:'请选择调入门店',trigger:'change'}],materialId:[{required:true,message:'请选择物资',trigger:'change'}],quantity:[{required:true,message:'请填写数量',trigger:'change'}],batchNo:[{required:true,message:'请填写批号',trigger:'blur'}],expiryDate:[{required:true,message:'请选择有效期',trigger:'change'}],reason:[{required:true,message:'请填写用途或原因',trigger:'blur'}] }
 const performanceRules = { roleKey:[{required:true,message:'请选择用户角色',trigger:'change'}],projectCategory:[{required:true,message:'请选择项目类型',trigger:'change'}],basis:[{required:true,message:'请选择业绩计算基数',trigger:'change'}],stores:[{required:true,type:'array',min:1,message:'请至少选择一个门店',trigger:'change'}] }
 
-watch([orgRegions,staff,projects,roles,performanceConfigs,storeRules,dictionaries,auditLogs],persistSettings,{deep:true})
+watch([orgRegions,staff,projects,roles,performanceConfigs,storeRules,dictionaries,activityPackages,auditLogs],persistSettings,{deep:true})
 watch([materials,batches,inventoryLogs,materialTemplates],persistInventory,{deep:true})
 watch([activeModule, search, storeFilter, statusFilter, staffRoleFilter, hireDateRange, categoryFilter, performanceRoleFilter, performanceCategoryFilter, materialCategoryFilter, logModule, inventoryTab],()=>{listPage.value=1})
 
-function persistSettings(){localStorage.setItem(SETTINGS_KEY,JSON.stringify({orgRegions,staff,projects,roles,performanceConfigs,storeRules,dictionaries,auditLogs}));emitConfig()}
+function persistSettings(){localStorage.setItem(SETTINGS_KEY,JSON.stringify({orgRegions,staff,projects,roles,performanceConfigs,storeRules,dictionaries,activityPackages,auditLogs}));emitConfig()}
 function persistInventory(){localStorage.setItem(INVENTORY_KEY,JSON.stringify({materials,batches,inventoryLogs,materialTemplates}))}
 function saveSettings(action){addAudit('rules',action,ruleStore.value,'门店独立规则已更新');emitConfig()}
 function emitConfig(){const departmentNames=[...new Set(flatStores.value.flatMap(store=>(store.departments||[]).map(dept=>typeof dept==='string'?dept:dept.name)).filter(Boolean))];emit('config-change',{stores:flatStores.value.filter(x=>x.status==='active').map(x=>x.name),departments:departmentNames,projectCatalog:buildProjectCatalog(),staff:JSON.parse(JSON.stringify(staff)),roles:JSON.parse(JSON.stringify(roles))})}
@@ -423,6 +428,7 @@ function expiryLabel(date,store){const d=daysUntil(date);return d<0?'已过期':
 function expiryType(date,store){const d=daysUntil(date);return d<0?'danger':d<=ruleForStore(store).expiryWarningDays?'warning':'success'}
 function daysUntil(date){return Math.ceil((new Date(`${date}T12:00:00`)-new Date(`${today()}T12:00:00`))/86400000)}
 function addDict(dict){if(!isAdmin.value||!dict.newValue?.trim())return;if(!dict.items.includes(dict.newValue.trim()))dict.items.push(dict.newValue.trim());addAudit('dictionary','新增字典项',dict.label,dict.newValue);dict.newValue=''}
+function addActivityPackage(){const first=projects.find(x=>x.status==='active');if(!first)return ElMessage.warning('请先配置可用项目');activityPackages.push({id:`promo-${Date.now()}`,name:`新活动套餐${activityPackages.length+1}`,projects:[{name:first.name,count:1,unitPrice:first.price}],packagePrice:first.price,status:'active'});addAudit('projects','新增活动套餐',`新活动套餐${activityPackages.length}`,'已按首个可用项目生成，可在本地演示数据中继续维护')}
 function removeDict(dict,item){if(!isAdmin.value)return;dict.items.splice(dict.items.indexOf(item),1);addAudit('dictionary','删除字典项',dict.label,item)}
 function addAudit(module,action,object,detail){auditLogs.push({id:`AL${Date.now()}${Math.random()}`,time:now(),module,moduleLabel:modules.find(x=>x.key===module)?.label||module,action,object,operator:`${props.roleMeta.label}·${props.roleMeta.name}`,detail})}
 function pageLabel(key){return pageOptions.find(x=>x.key===key)?.label||key}
