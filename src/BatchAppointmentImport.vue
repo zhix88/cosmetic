@@ -76,12 +76,16 @@ async function handleFile(event){
     if(!rows.length)return ElMessage.warning('文件中没有可导入的数据')
     if(rows.length>500)return ElMessage.error('单次最多导入500条记录')
     fileName.value=file.name
-    previewRows.value=rows.map((row,index)=>normalizeRow(row,index+2)).map(validateRow)
+    previewRows.value=rows.map((row,index)=>enrichImportRow(normalizeRow(row,index+2),row)).map(validateRow)
     previewPage.value=1
   }catch(error){ElMessage.error(`文件解析失败：${error.message||'请检查模板格式'}`)}
   event.target.value=''
 }
 function pick(row,names){for(const name of names){if(row[name]!==undefined&&String(row[name]).trim()!=='')return String(row[name]).trim()}return ''}
+function enrichImportRow(normalized,row){
+  const timeText=pick(row,['时间'])
+  return {...normalized,serial:pick(row,['序号'])||String(normalized.rowNo-1),date:normalizeDate(timeText)||normalized.date,time:normalizeTime(timeText)||normalized.time,customerName:pick(row,['VIP1'])||normalized.customerName,customerPhone:normalizePhone(pick(row,['VIP1 电话','VIP1电话']))||normalized.customerPhone,companionName:pick(row,['VIP2'])||normalized.companionName,companionPhone:normalizePhone(pick(row,['VIP2 电话','VIP2电话']))||normalized.companionPhone,diagnosisType:pick(row,['新诊/复诊'])||normalized.diagnosisType,cardConsultant:pick(row,['卡姐']),beautyConsultant:pick(row,['美导']),service:pick(row,['客服'])}
+}
 function normalizeDate(value){
   const text=String(value||'').trim().replace(/[./年月]/g,'-').replace(/日/g,'')
   const match=text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
@@ -120,15 +124,22 @@ function confirmImport(){
 function createRecord(row,stamp,index){
   const id=`BI${row.date.replaceAll('-','')}${String(stamp).slice(-5)}${String(index+1).padStart(3,'0')}`
   const staff={科臻澳总店:{service:'顾妍',butler:'安然',director:'林珊',manager:'周店长'},金水形象店:{service:'宋佳',butler:'夏薇',director:'顾宁',manager:'林经理'},东区旗舰店:{service:'唐欣',butler:'温然',director:'许诺',manager:'许经理'}}[row.store]||{}
-  return {id,businessDate:row.date,appointmentTime:row.time,diagnosisType:row.diagnosisType,store:row.store,vip1:{name:row.customerName,phone:row.customerPhone},vip2:row.companionName?{name:row.companionName,phone:row.companionPhone}:null,cardConsultant:'',beautyConsultant:'',estimatedProject:row.projects.join('、'),projects:row.projects,estimatedAmount:0,paymentType:'none',revenue:0,cardAmount:0,note:row.note,assignments:{market:row.market,...staff},storeManager:staff.manager||'',department:'',followupDate:addDays(row.date,1),status:'invited',appointmentStatus:'pending',flags:row.warnings.map(x=>`导入提醒：${x}`),source:'batch-import',logs:[{id:`${id}-created`,time:nowText(),operator:`${props.roleMeta.label}·${props.roleMeta.name}`,action:'批量导入预约',detail:`预约${row.date} ${row.time}到店`,fromStatus:'invited',toStatus:'invited',type:'primary'}]}
+  return {id,businessDate:row.date,appointmentTime:row.time,diagnosisType:row.diagnosisType,store:row.store,vip1:{name:row.customerName,phone:row.customerPhone},vip2:row.companionName?{name:row.companionName,phone:row.companionPhone}:null,cardConsultant:row.cardConsultant||'',beautyConsultant:row.beautyConsultant||'',estimatedProject:row.projects.join('、'),projects:row.projects,estimatedAmount:0,paymentType:'none',revenue:0,cardAmount:0,note:row.note,importSnapshot:{serial:row.serial,time:row.date+' '+row.time,diagnosisType:row.diagnosisType,cardConsultant:row.cardConsultant,beautyConsultant:row.beautyConsultant,market:row.market,store:row.store,vip1:row.customerName,vip1Phone:row.customerPhone,vip2:row.companionName,vip2Phone:row.companionPhone,remark:row.note,service:row.service},assignments:{market:row.market,service:row.service||staff.service,butler:staff.butler,director:staff.director,manager:staff.manager,floorControl:'陈场控'},storeManager:staff.manager||'',department:'',followupDate:addDays(row.date,60),status:'floorControl',appointmentStatus:'imported',flags:row.warnings.map(x=>`导入提醒：${x}`),source:'batch-import',floorControl:{createdTime:nowText()},doctorDiagnosis:{},serviceExecution:{},followupRecords:[],logs:[{id:`${id}-created`,time:nowText(),operator:`${props.roleMeta.label}·${props.roleMeta.name}`,action:'批量导入邀约',detail:`导入后进入场控排诊；预约${row.date} ${row.time}到店`,fromStatus:'floorControl',toStatus:'floorControl',type:'primary'}]}
 }
 function downloadTemplate(){
-  const headers=['预约日期','预约时间','顾客姓名','手机号','同行顾客','同行手机号','门店','新诊/复诊','预约项目','市场负责人','备注']
-  const examples=[[addDays(today(),1),'10:00','示例顾客','13800000001','','','科臻澳总店','新诊','面部护理、祛皱纹','苏晴','首次邀约']]
+  const headers=['序号','时间','新诊/复诊','卡姐','美导','市场','门店','VIP1','VIP1 电话','VIP2','VIP2 电话','备注','客服']
+  const examples=[['1',`${addDays(today(),1)} 10:00`,'新诊','叶老师','乔老师','苏晴','科臻澳总店','示例顾客','13800000001','同行顾客','13900000001','首次邀约','顾妍']]
   const sheet=XLSX.utils.aoa_to_sheet([headers,...examples])
-  sheet['!cols']=[12,10,12,14,12,14,16,12,24,14,24].map(w=>({wch:w}))
+  sheet['!cols']=[8,20,12,12,12,12,16,14,16,14,16,24,12].map(w=>({wch:w}))
   const workbook=XLSX.utils.book_new();XLSX.utils.book_append_sheet(workbook,sheet,'邀约导入模板')
   XLSX.writeFile(workbook,'邀约记录批量导入模板.xlsx')
+  return
+  const legacyHeaders=['预约日期','预约时间','顾客姓名','手机号','同行顾客','同行手机号','门店','新诊/复诊','预约项目','市场负责人','备注']
+  const legacyExamples=[[addDays(today(),1),'10:00','示例顾客','13800000001','','','科臻澳总店','新诊','面部护理、祛皱纹','苏晴','首次邀约']]
+  const legacySheet=XLSX.utils.aoa_to_sheet([legacyHeaders,...legacyExamples])
+  legacySheet['!cols']=[12,10,12,14,12,14,16,12,24,14,24].map(w=>({wch:w}))
+  const legacyWorkbook=XLSX.utils.book_new();XLSX.utils.book_append_sheet(legacyWorkbook,legacySheet,'邀约导入模板')
+  XLSX.writeFile(legacyWorkbook,'邀约记录批量导入模板.xlsx')
 }
 function clearFile(){previewRows.value=[];fileName.value='';previewPage.value=1}
 function addDays(date,days){const d=new Date(`${date}T12:00:00`);d.setDate(d.getDate()+days);return d.toISOString().slice(0,10)}

@@ -87,7 +87,7 @@
         </div>
 
         <div class="asset-overview">
-          <article><p>储值余额</p><strong>¥{{ money(activeCustomer.balance) }}</strong><el-button v-if="canManageAssets" link type="primary" @click="openAssetDialog('balance')">调整</el-button></article>
+          <article><p>储值余额</p><strong>¥{{ money(activeCustomer.balance) }}</strong><el-button v-if="canManageAssets" link type="primary" @click="openRechargeDialog">会员充值</el-button><el-button v-if="canManageAssets" link type="primary" @click="openAssetDialog('balance')">调整</el-button></article>
           <article><p>会员积分</p><strong>{{ activeCustomer.points }}</strong><el-button v-if="canManageAssets" link type="primary" @click="openAssetDialog('points')">调整</el-button></article>
           <article><p>累计消费</p><strong>¥{{ money(customerSpend(activeCustomer)) }}</strong><small>{{ customerRecords(activeCustomer).length }} 次到店</small></article>
           <article><p>剩余项目</p><strong>{{ remainingCount(activeCustomer) }}</strong><el-button v-if="canManageAssets" link type="primary" @click="openPackageDialog()">购买套餐</el-button></article>
@@ -182,6 +182,7 @@
           <el-form-item label="所属门店" prop="store"><el-select v-model="customerForm.store" :disabled="role !== 'admin'"><el-option v-for="store in stores" :key="store" :label="store" :value="store" /></el-select></el-form-item>
           <el-form-item label="会员等级"><el-select v-model="customerForm.memberLevel"><el-option v-for="level in memberLevels" :key="level" :label="level" :value="level" /></el-select></el-form-item>
           <el-form-item label="顾客来源"><el-input v-model="customerForm.source" /></el-form-item>
+          <el-form-item label="客户标签"><el-select v-model="customerForm.tags" multiple filterable allow-create default-first-option><el-option v-for="tag in ['高消费力','中消费力','潜力客户','高度满意','满意','需关注']" :key="tag" :label="tag" :value="tag" /></el-select></el-form-item>
           <el-form-item label="特殊喜好"><el-input v-model="customerForm.preferences" /></el-form-item>
         </div>
         <div class="archive-form-grid customer-owner-form">
@@ -201,6 +202,14 @@
         <el-form-item label="调整原因" prop="reason"><el-input v-model="assetForm.reason" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="assetDialogVisible = false">取消</el-button><el-button type="primary" @click="submitAssetAdjustment">提交调整单</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="rechargeVisible" title="会员充值" width="520px">
+      <el-form :model="rechargeForm" label-position="top">
+        <div class="archive-form-grid"><el-form-item label="充值金额"><el-input-number v-model="rechargeForm.amount" :min="1" :step="1000" /></el-form-item><el-form-item label="折扣比例"><el-input-number v-model="rechargeForm.discount" :min="0.01" :max="1" :step="0.01" /></el-form-item><el-form-item label="实际付款金额"><el-input-number v-model="rechargeForm.paid" :min="0" :step="100" /></el-form-item><el-form-item label="VIP等级"><el-select v-model="rechargeForm.memberLevel"><el-option v-for="level in memberLevels" :key="level" :label="level" :value="level" /></el-select></el-form-item></div>
+        <el-form-item label="操作备注"><el-input v-model="rechargeForm.note" type="textarea" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="rechargeVisible=false">取消</el-button><el-button type="primary" @click="submitRecharge">确认充值</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="packageDialogVisible" :title="packageMode === 'purchase' ? '购买项目套餐' : '核销项目套餐'" width="540px">
@@ -268,6 +277,7 @@ const customerFormVisible = ref(false)
 const customerFormRef = ref()
 const editingCustomerId = ref(null)
 const assetDialogVisible = ref(false)
+const rechargeVisible = ref(false)
 const assetFormRef = ref()
 const assetType = ref('balance')
 const packageDialogVisible = ref(false)
@@ -280,6 +290,7 @@ const customerPhotos = ref([])
 
 const customerForm = reactive({})
 const assetForm = reactive({})
+const rechargeForm = reactive({ amount: 1000, discount: 1, paid: 1000, memberLevel: '普通会员', note: '' })
 const packageForm = reactive({})
 const photoForm = reactive({ type: 'before', project: '', date: today(), note: '', file: '' })
 const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
@@ -423,9 +434,9 @@ function openCustomerDetail(customer) {
 function openCustomerForm(customer) {
   editingCustomerId.value = customer?.id || null
   Object.keys(customerForm).forEach((key) => delete customerForm[key])
-  Object.assign(customerForm, customer ? { ...customer, owners: { ...(customer.owners || {}) } } : {
+  Object.assign(customerForm, customer ? { ...customer, tags:[...(customer.tags || [])], owners: { ...(customer.owners || {}) } } : {
     name: '', phone: '', gender: '女', birthday: '', store: props.role === 'admin' ? props.stores[0] : props.roleMeta.store,
-    memberLevel: '普通会员', source: '手工建档', preferences: '', taboos: '', preparation: '', note: '', owners: {}
+    memberLevel: '普通会员', source: '手工建档', tags:[], preferences: '', taboos: '', preparation: '', note: '', owners: {}
   })
   customerFormVisible.value = true
 }
@@ -475,6 +486,22 @@ function openAssetDialog(type) {
   assetType.value = type
   Object.assign(assetForm, { action: type === 'balance' ? '充值' : '赠送', amount: type === 'balance' ? 1000 : 100, reason: '' })
   assetDialogVisible.value = true
+}
+function openRechargeDialog() {
+  const customer = activeCustomer.value
+  Object.assign(rechargeForm, { amount: 1000, discount: 1, paid: 1000, memberLevel: customer.memberLevel || '普通会员', note: '' })
+  rechargeVisible.value = true
+}
+function submitRecharge() {
+  const customer = activeCustomer.value
+  const expected = Number((rechargeForm.amount * rechargeForm.discount).toFixed(2))
+  if (Number(rechargeForm.paid) !== expected && !rechargeForm.note.trim()) return ElMessage.warning('实际付款与折扣计算不一致时，请填写操作备注')
+  const before = Number(customer.balance || 0)
+  customer.balance = before + Number(rechargeForm.amount || 0)
+  customer.memberLevel = rechargeForm.memberLevel
+  customer.logs.push({ ...makeLog('会员充值', `充值¥${money(rechargeForm.amount)}；折扣${rechargeForm.discount}；实付¥${money(rechargeForm.paid)}；${rechargeForm.note || '标准折扣'}`, 'success'), before, after: customer.balance })
+  rechargeVisible.value = false
+  ElMessage.success('会员充值已到账并记录流水')
 }
 async function submitAssetAdjustment() {
   if (!await assetFormRef.value?.validate().catch(() => false)) return

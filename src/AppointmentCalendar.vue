@@ -379,7 +379,7 @@ async function saveAppointment() {
     assignments: { market: createForm.market, service: createForm.service, butler: createForm.butler, director: createForm.director, manager: createForm.manager },
     storeManager: createForm.storeManager,
     department: '', followupDate: addDays(createForm.date, 1), status: 'invited', appointmentStatus: 'pending', flags: [],
-    logs: [{ id: `${id}-created`, time: nowText(), operator: `${props.roleMeta.label}·${props.roleMeta.name}`, action: '创建预约', detail: `预约${createForm.date} ${createForm.time}到店`, fromStatus: 'invited', toStatus: 'invited', type: 'primary' }]
+    logs: [{ id: `${id}-created`, time: nowText(), operator: `${props.roleMeta.label}·${props.roleMeta.name}`, action: '创建邀约', detail: `预约${createForm.date} ${createForm.time}到店，进入场控排诊`, fromStatus: 'floorControl', toStatus: 'floorControl', type: 'primary' }], status: 'floorControl', floorControl: { createdTime: nowText() }, doctorDiagnosis: {}, serviceExecution: {}, followupRecords: []
   }
   emit('update:records', [...props.records, record])
   createVisible.value = false
@@ -399,7 +399,7 @@ async function submitInvite() {
   if (!await inviteFormRef.value?.validate().catch(() => false)) return
   const record = props.records.find((x) => x.id === editingId.value)
   if (inviteForm.result === '需要改期') { inviteVisible.value = false; return openAction('reschedule', record) }
-  if (inviteForm.result === '已确认到店') { record.appointmentStatus = 'confirmed'; record.status = 'reception' }
+  if (inviteForm.result === '已确认到店') { record.appointmentStatus = 'confirmed'; record.status = 'floorControl' }
   if (inviteForm.result === '待确认') record.appointmentStatus = 'unconfirmed'
   if (inviteForm.result === '拒绝到店') { record.appointmentStatus = 'cancelled'; record.status = 'cancelled'; record.flags.push(`拒绝到店：${inviteForm.note}`) }
   addLog(record, '邀约处理', `${inviteForm.result}；${inviteForm.note}`, 'invited', record.status, inviteForm.result === '拒绝到店' ? 'danger' : 'primary')
@@ -424,7 +424,7 @@ async function submitAction() {
   }
   emit('update:records', [...props.records]); actionVisible.value = false; ElMessage.success('预约已更新')
 }
-function reinvite(record) { const from = record.status; record.status = 'invited'; record.appointmentStatus = 'pending'; addLog(record, '重新邀约', '取消记录已重新进入待邀约', from, 'invited'); emit('update:records', [...props.records]); ElMessage.success('已重新进入待邀约') }
+function reinvite(record) { const from = record.status; record.status = 'floorControl'; record.appointmentStatus = 'pending'; addLog(record, '重新邀约', '取消记录已重新进入场控排诊', from, 'floorControl'); emit('update:records', [...props.records]); ElMessage.success('已重新进入场控排诊') }
 function addLog(record, action, detail, fromStatus, toStatus, type='primary') { record.logs ||= []; record.logs.push({ id: `${record.id}-${Date.now()}`, time: nowText(), operator: `${props.roleMeta.label}·${props.roleMeta.name}`, action, detail, fromStatus, toStatus, type }) }
 function buildPackages(rows) {
   const usage = new Map()

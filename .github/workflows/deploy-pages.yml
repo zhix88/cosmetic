@@ -2,7 +2,7 @@ name: Deploy GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/two-floor-diagnosis-demo]
   workflow_dispatch:
 
 permissions:
