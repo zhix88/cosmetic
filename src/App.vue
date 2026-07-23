@@ -1446,6 +1446,7 @@ function consumeCustomerAssets(record, selectedProjects, paymentType, amount) {
 
 function buildInitialLogs(id, status, index) {
   const route = ['invited', 'reception', 'triage', 'scheduling', 'service', 'followup', 'completed']
+  const legacyOwners = { invited: 'market', reception: 'service', triage: 'butler', scheduling: 'director' }
   const actionNames = {
     invited: '市场邀约', reception: '客服接待', triage: '顾客分诊',
     scheduling: '总监排诊', service: '服务结束', followup: '客服回访'
@@ -1462,8 +1463,8 @@ function buildInitialLogs(id, status, index) {
     const to = route[step + 1]
     logs.push({
       id: `${id}-${from}`, time: `${today} ${String(8 + Math.floor((step + 1) / 2)).padStart(2, '0')}:${step % 2 ? '30' : '15'}`,
-      operator: `${roles.value.find((role) => role.value === statusMeta[from].owner)?.label || '员工'}·演示人员`,
-      action: actionNames[from], detail: `${actionNames[from]}已完成，业务进入${statusMeta[to].label}`,
+      operator: `${roles.value.find((role) => role.value === (statusMeta[from]?.owner || legacyOwners[from]))?.label || '员工'}·演示人员`,
+      action: actionNames[from], detail: `${actionNames[from]}已完成，业务进入${statusName(to)}`,
       fromStatus: from, toStatus: to, type: to === 'completed' ? 'success' : 'primary'
     })
   }
