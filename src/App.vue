@@ -107,25 +107,6 @@
           </div>
         </div>
 
-        <section class="metric-grid">
-          <article class="metric-card primary">
-            <span class="metric-icon"><el-icon><Bell /></el-icon></span>
-            <div><p>我的待办</p><strong>{{ myTodoCount }}</strong><small>{{ currentRoleMeta.label }}负责节点</small></div>
-          </article>
-          <article class="metric-card">
-            <span class="metric-icon purple"><el-icon><List /></el-icon></span>
-            <div><p>今日到店</p><strong>{{ arrivalRecords.length }}</strong><small>含新诊 {{ newDiagnosisCount }} 人</small></div>
-          </article>
-          <article class="metric-card">
-            <span class="metric-icon orange"><el-icon><Warning /></el-icon></span>
-            <div><p>异常提醒</p><strong>{{ exceptionCount }}</strong><small>取消、改期或超时</small></div>
-          </article>
-          <article class="metric-card">
-            <span class="metric-icon green"><el-icon><Money /></el-icon></span>
-            <div><p>今日现金业绩</p><strong>¥{{ formatMoney(todayRevenue) }}</strong><small>耗卡 {{ consumeCardCount }} 单</small></div>
-          </article>
-        </section>
-
         <section class="workspace-grid">
           <article class="panel board-panel">
             <div class="panel-title">
@@ -173,6 +154,13 @@
                   <p><span>预约项目</span>{{ record.estimatedProject || '待补充' }}</p>
                   <p><span>所属门店</span>{{ record.store }}</p>
                   <p><span>当前负责人</span>{{ currentOwner(record) }}</p>
+                  <p><span>操作时间</span>{{ stageOperationTime(record) }}</p>
+                  <p v-if="record.status === 'followup'" class="followup-time"><span>预计回访</span>{{ record.followupDate || '待生成' }}</p>
+                </div>
+                <div class="card-role-list" aria-label="排诊角色人员">
+                  <span v-for="person in schedulingStaff(record)" :key="person.label" :class="{ unassigned: !person.name }">
+                    <small>{{ person.label }}</small><strong>{{ person.name || '待分配' }}</strong>
+                  </span>
                 </div>
                 <div v-if="record.flags.length" class="flag-row">
                   <span v-for="flag in record.flags.slice(-2)" :key="flag">{{ flag }}</span>
@@ -222,6 +210,14 @@
           </article>
 
           <aside class="right-rail">
+            <section class="metric-stack" aria-label="今日经营数据">
+              <article class="metric-card primary"><span class="metric-icon"><el-icon><Bell /></el-icon></span><div><p>我的待办</p><strong>{{ myTodoCount }}</strong><small>{{ currentRoleMeta.label }}负责节点</small></div></article>
+              <article class="metric-card"><span class="metric-icon purple"><el-icon><List /></el-icon></span><div><p>今日预约</p><strong>{{ dayRecords.length }}</strong><small>含新诊 {{ newDiagnosisCount }} 人</small></div></article>
+              <article class="metric-card"><span class="metric-icon blue"><el-icon><Calendar /></el-icon></span><div><p>待确认到店</p><strong>{{ pendingArrivalCount }}</strong><small>已排诊，等待顾客到店</small></div></article>
+              <article class="metric-card"><span class="metric-icon orange"><el-icon><Warning /></el-icon></span><div><p>待场控排诊</p><strong>{{ pendingFloorControlCount }}</strong><small>导入后待分配人员</small></div></article>
+              <article class="metric-card"><span class="metric-icon green"><el-icon><Money /></el-icon></span><div><p>今日现金业绩</p><strong>¥{{ formatMoney(todayRevenue) }}</strong><small>耗卡 {{ consumeCardCount }} 单</small></div></article>
+              <article class="metric-card"><span class="metric-icon orange"><el-icon><Warning /></el-icon></span><div><p>异常提醒</p><strong>{{ exceptionCount }}</strong><small>取消、改期或超时</small></div></article>
+            </section>
             <article class="panel node-panel">
               <div class="panel-title compact">
                 <div><h2>节点完成情况</h2><p>{{ selectedDate }}</p></div>
@@ -351,6 +347,12 @@
             <div><dt>消费方式</dt><dd>{{ paymentLabel(activeRecord) }}</dd></div>
             <div><dt>备注</dt><dd>{{ activeRecord.note || '—' }}</dd></div>
           </dl>
+          <div class="process-detail-groups">
+            <section><h4>邀约信息</h4><p>导入时间：{{ importInfo(activeRecord).time }}；市场：{{ importInfo(activeRecord).market }}；客服：{{ importInfo(activeRecord).service }}；备注：{{ importInfo(activeRecord).note }}</p></section>
+            <section><h4>场控排诊信息</h4><p>创建时间：{{ floorInfo(activeRecord).createdTime }}；到店时间：{{ floorInfo(activeRecord).arrivalTime }}；场控：{{ floorInfo(activeRecord).operator }}；建议项目：{{ floorInfo(activeRecord).managerSuggestion }}</p></section>
+            <section><h4>医生排诊信息</h4><p>医生：{{ doctorInfo(activeRecord).doctor }}；护士：{{ doctorInfo(activeRecord).nurse }}；敷麻时间：{{ doctorInfo(activeRecord).numbingTime }}；药物/服务：{{ doctorInfo(activeRecord).medication }}</p></section>
+            <section><h4>服务与回访信息</h4><p>服务项目：{{ activeRecord.projects?.join('、') || '—' }}；预计回访时间：{{ activeRecord.followupDate || '—' }}；回访记录：{{ followupInfo(activeRecord) }}</p></section>
+          </div>
         </div>
 
         <div class="drawer-section">
@@ -373,7 +375,7 @@
               placement="top"
             >
               <strong>{{ log.action }}</strong>
-              <p>{{ log.operator }} · {{ log.detail }}</p>
+              <p>{{ localizedLogText(log.operator) }} · {{ localizedLogText(log.detail) }}</p>
               <small v-if="log.fromStatus !== log.toStatus">
                 {{ statusName(log.fromStatus) }} → {{ statusName(log.toStatus) }}
               </small>
@@ -395,8 +397,6 @@
       <el-form ref="nodeFormRef" :model="nodeForm" :rules="nodeRules" label-position="top">
         <template v-if="dialogStatus === 'floorControl'">
           <div class="form-grid">
-            <el-form-item label="到店结果" prop="result"><el-select v-model="nodeForm.result"><el-option label="已到店" value="已到店" /><el-option label="未到店" value="未到店" /></el-select></el-form-item>
-            <el-form-item label="实际到店时间" prop="time"><el-time-select v-model="nodeForm.time" start="08:00" step="00:15" end="21:00" /></el-form-item>
             <el-form-item label="管家"><el-select v-model="nodeForm.butler"><el-option v-for="x in staffOptions('butler')" :key="x.code" :label="x.name" :value="x.name" /></el-select></el-form-item>
             <el-form-item label="咨询"><el-select v-model="nodeForm.consultant"><el-option v-for="x in staffOptions('consultant')" :key="x.code" :label="x.name" :value="x.name" /></el-select></el-form-item>
             <el-form-item label="总监"><el-select v-model="nodeForm.director"><el-option v-for="x in staffOptions('director')" :key="x.code" :label="x.name" :value="x.name" /></el-select></el-form-item>
@@ -404,6 +404,16 @@
             <el-form-item label="经理建议项目" prop="project"><el-input v-model="nodeForm.project" /></el-form-item>
           </div>
           <el-form-item label="场控排诊备注" prop="note"><el-input v-model="nodeForm.note" type="textarea" :rows="3" /></el-form-item>
+        </template>
+
+        <template v-else-if="dialogStatus === 'arrivalConfirmation'">
+          <div class="form-grid">
+            <el-form-item label="到店结果" prop="result"><el-select v-model="nodeForm.result"><el-option label="已到店" value="已到店" /><el-option label="未到店" value="未到店" /><el-option label="申请改期" value="申请改期" /></el-select></el-form-item>
+            <el-form-item label="实际到店时间" prop="time"><el-time-select v-model="nodeForm.time" start="08:00" step="00:15" end="21:00" /></el-form-item>
+            <el-form-item label="诊疗类型" prop="diagnosisType"><el-radio-group v-model="nodeForm.diagnosisType"><el-radio value="新诊">新诊</el-radio><el-radio value="复诊">复诊</el-radio></el-radio-group></el-form-item>
+            <el-form-item label="排诊状态"><el-input model-value="场控排诊已完成，等待顾客到店" disabled /></el-form-item>
+          </div>
+          <el-form-item label="到店确认备注" prop="note"><el-input v-model="nodeForm.note" type="textarea" :rows="3" /></el-form-item>
         </template>
 
         <template v-else-if="dialogStatus === 'doctorDiagnosis'">
@@ -461,9 +471,9 @@
         <template v-else-if="dialogStatus === 'service'">
           <div class="form-grid">
             <el-form-item label="服务结果" prop="result"><el-select v-model="nodeForm.result"><el-option label="服务已结束" value="服务已结束" /><el-option label="服务中止" value="服务中止" /></el-select></el-form-item>
-            <el-form-item label="消费方式" prop="paymentType"><el-select v-model="nodeForm.paymentType"><el-option label="现金/支付" value="cash" /><el-option label="单项目/套餐次数" value="card" /><el-option label="会员充值余额" value="member" /><el-option label="未消费" value="none" /></el-select></el-form-item>
+            <el-form-item label="扣减来源" prop="paymentType"><el-select v-model="nodeForm.paymentType"><el-option label="现金/支付" value="cash" /><el-option label="单项目剩余次数" value="singleProject" /><el-option label="活动套餐拆分次数" value="activityPackage" /><el-option label="会员充值余额" value="member" /><el-option label="未消费" value="none" /></el-select></el-form-item>
             <el-form-item v-if="nodeForm.paymentType === 'cash'" label="实收业绩（元）" prop="revenue"><el-input-number v-model="nodeForm.revenue" :min="0" :step="1000" /></el-form-item>
-            <el-form-item v-if="nodeForm.paymentType === 'card'" label="耗卡金额（元）" prop="cardAmount"><el-input-number v-model="nodeForm.cardAmount" :min="0" :step="1000" /></el-form-item>
+            <el-form-item v-if="['singleProject','activityPackage'].includes(nodeForm.paymentType)" label="本次核销金额（元）" prop="cardAmount"><el-input-number v-model="nodeForm.cardAmount" :min="0" :step="1000" /></el-form-item>
             <el-form-item v-if="nodeForm.paymentType === 'member'" label="余额扣减金额（元）" prop="cardAmount"><el-input-number v-model="nodeForm.cardAmount" :min="0" :step="1000" /></el-form-item>
             <el-form-item label="回访日期"><el-date-picker v-model="nodeForm.followupDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
           </div>
@@ -497,7 +507,7 @@
       </el-form>
       <template #footer>
         <el-button @click="nodeDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitNode">确认并推进流程</el-button>
+        <el-button type="primary" @click="submitNode">{{ nodeSubmitLabel }}</el-button>
       </template>
     </el-dialog>
 
@@ -679,7 +689,7 @@ const projectCatalog = reactive(savedConfig?.projectCatalog || [
   { label: '身体护理', options: ['形体管理', '私密护理', '术后护理'] }
 ])
 const allProjects = computed(() => projectCatalog.flatMap((group) => group.options))
-const workflowLegend = ['批量导入', '场控排诊', '医生排诊', '服务执行', '顾客回访']
+const workflowLegend = ['批量导入', '场控排诊', '确认到店', '医生排诊', '服务执行', '顾客回访']
 
 const defaultEmployees = [
   ['E0001','苏晴','科臻澳总店','市场','market'],['E0002','顾妍','科臻澳总店','客服','service'],['E0003','安然','科臻澳总店','管家','butler'],['E0004','林珊','科臻澳总店','总监','director'],['E0005','周店长','科臻澳总店','店长','storeManager'],['E0009','叶老师','科臻澳总店','卡姐','cardConsultant'],['E0010','乔老师','科臻澳总店','美导','beautyConsultant'],['E0011','韩经理','科臻澳总店','经理','manager'],['E0012','陈场控','科臻澳总店','场控','floorControl'],['E0013','吴咨询','科臻澳总店','咨询','consultant'],['E0014','李医生','科臻澳总店','医生','doctor'],['E0015','赵护士','科臻澳总店','护士','nurse'],['admin','admin','总部','admin','admin']
@@ -718,6 +728,7 @@ const guideFlow = [
 
 const statusMeta = {
   floorControl: { label: '场控排诊', type: 'warning', owner: 'floorControl' },
+  arrivalConfirmation: { label: '确认到店', type: 'info', owner: 'floorControl' },
   doctorDiagnosis: { label: '医生排诊', type: 'primary', owner: 'doctor' },
   service: { label: '服务执行', type: 'success', owner: 'director' },
   followup: { label: '顾客回访', type: 'success', owner: 'service' },
@@ -731,10 +742,10 @@ const statusTabs = [
 ]
 
 const nextStatus = {
-  floorControl: 'doctorDiagnosis', doctorDiagnosis: 'service', service: 'followup', followup: 'completed'
+  floorControl: 'arrivalConfirmation', arrivalConfirmation: 'doctorDiagnosis', doctorDiagnosis: 'service', service: 'followup', followup: 'completed'
 }
 const previousStatus = {
-  doctorDiagnosis: 'floorControl', service: 'doctorDiagnosis', followup: 'service', completed: 'followup'
+  arrivalConfirmation: 'floorControl', doctorDiagnosis: 'arrivalConfirmation', service: 'doctorDiagnosis', followup: 'service', completed: 'followup'
 }
 
 const savedSession = readLocalJson(AUTH_KEY)
@@ -788,7 +799,7 @@ const nodeRules = {
   paymentType: [{ required: true, message: '请选择消费方式', trigger: 'change' }],
   cardAmount: [{
     validator: (_rule, value, callback) => {
-      if (nodeForm.paymentType === 'card' && !Number(value)) callback(new Error('请填写耗卡金额'))
+      if (['singleProject','activityPackage','member'].includes(nodeForm.paymentType) && !Number(value)) callback(new Error('请填写扣减金额'))
       else callback()
     },
     trigger: 'change'
@@ -971,6 +982,8 @@ const exceptionCount = computed(() => dayRecords.value.filter((x) => x.flags.len
 const todayRevenue = computed(() => arrivalRecords.value.reduce((sum, x) => sum + (x.paymentType === 'cash' ? Number(x.revenue || 0) : 0), 0))
 const consumeCardCount = computed(() => arrivalRecords.value.filter((x) => x.paymentType === 'card').length)
 const myTodoCount = computed(() => dayRecords.value.filter((x) => canOperate(x)).length)
+const pendingFloorControlCount = computed(() => dayRecords.value.filter((x) => x.status === 'floorControl').length)
+const pendingArrivalCount = computed(() => dayRecords.value.filter((x) => x.status === 'arrivalConfirmation').length)
 
 const filteredRecords = computed(() => {
   const q = keyword.value.trim().toLowerCase()
@@ -986,8 +999,8 @@ const filteredRecords = computed(() => {
 const pagedRecords = computed(() => filteredRecords.value.slice((currentPage.value - 1) * pageSize, currentPage.value * pageSize))
 
 const nodeSummary = computed(() => {
-  const colors = ['#f59e0b', '#fb923c', '#6366f1', '#8b5cf6', '#10b981', '#06b6d4', '#64748b']
-  const keys = ['floorControl', 'doctorDiagnosis', 'service', 'followup', 'completed', 'cancelled']
+  const colors = ['#f59e0b', '#38bdf8', '#fb923c', '#6366f1', '#8b5cf6', '#10b981', '#06b6d4']
+  const keys = ['floorControl', 'arrivalConfirmation', 'doctorDiagnosis', 'service', 'followup', 'completed', 'cancelled']
   const max = Math.max(1, ...keys.map((key) => dayRecords.value.filter((x) => x.status === key).length))
   return keys.map((status, index) => {
     const count = dayRecords.value.filter((x) => x.status === status).length
@@ -997,10 +1010,11 @@ const nodeSummary = computed(() => {
 const attentionRecords = computed(() => dayRecords.value.filter((x) => x.flags.length || x.status === 'cancelled').slice(0, 5))
 
 const nodeDialogTitle = computed(() => ({
-  floorControl: '场控排诊', doctorDiagnosis: '医生排诊',
+  floorControl: '场控排诊', arrivalConfirmation: '确认到店', doctorDiagnosis: '医生排诊',
   invited: '邀约处理', reception: '到店接待', triage: '顾客分诊',
   scheduling: '排诊安排', service: '结束服务', followup: '顾客回访'
 }[dialogStatus.value] || '节点处理'))
+const nodeSubmitLabel = computed(() => dialogStatus.value === 'floorControl' ? '完成排诊，等待顾客到店' : dialogStatus.value === 'arrivalConfirmation' ? '确认到店并进入医生排诊' : '确认并推进流程')
 const commonDialogTitle = computed(() => ({
   revenue: '编辑消费与业绩', reschedule: '业务改期', rollback: '退回上一节点', cancel: '取消业务', staff: '设置人员归属'
 }[commonAction.value]))
@@ -1022,10 +1036,6 @@ watch([guideVisible, guideStep], async () => {
 
 onMounted(() => {
   window.addEventListener('resize', positionGuidePointer)
-  if (!localStorage.getItem(GUIDE_KEY)) {
-    guideStep.value = 0
-    guideVisible.value = true
-  }
 })
 onBeforeUnmount(() => window.removeEventListener('resize', positionGuidePointer))
 
@@ -1104,7 +1114,7 @@ function countByStatus(status) {
 
 function actionLabel(status) {
   return {
-    floorControl: '进行场控排诊', doctorDiagnosis: '进行医生排诊',
+    floorControl: '进行场控排诊', arrivalConfirmation: '确认到店', doctorDiagnosis: '进行医生排诊',
     invited: '处理邀约', reception: '登记接待', triage: '进行分诊',
     scheduling: '安排排诊', service: '结束服务', followup: '完成回访'
   }[status] || '处理'
@@ -1138,7 +1148,7 @@ function projectFollowupDays(projectName) {
 }
 
 function calculateFollowupDate(projects) {
-  const days = Math.max(...projects.map(projectFollowupDays), 60)
+  const days = Math.min(...projects.map(projectFollowupDays), 60)
   return addDays(today, days)
 }
 
@@ -1179,7 +1189,7 @@ function openNodeDialog(record) {
     department: record.department || '', level: '', manager: record.assignments.manager || '',
     butler: record.assignments.butler || '', consultant: record.assignments.consultant || '', director: record.assignments.director || '',
     doctor: record.doctorDiagnosis?.doctor || record.assignments.doctor || '', nurse: record.doctorDiagnosis?.nurse || record.assignments.nurse || '', numbingTime: record.doctorDiagnosis?.numbingTime || '', medication: record.doctorDiagnosis?.medication || '',
-    estimatedAmount: record.estimatedAmount || 0, paymentType: record.paymentType || 'cash',
+    estimatedAmount: record.estimatedAmount || 0, paymentType: record.paymentType === 'card' ? 'singleProject' : (record.paymentType || 'cash'),
     revenue: record.revenue || 0, cardAmount: record.cardAmount || 0,
     projects: [...(record.projects || [record.estimatedProject].filter(Boolean))],
     followupDate: record.followupDate || addDays(today, 1),
@@ -1195,18 +1205,23 @@ async function submitNode() {
   if (!record) return
   const from = record.status
   let to = nextStatus[from]
-  if (from === 'floorControl' && nodeForm.result === '未到店') {
-    record.flags.push('未到店：需客服再次联系')
-    addLog(record, '登记未到店', '顾客未按预约时间到店，流程保留在接待节点', from, from, 'warning')
+  if (from === 'arrivalConfirmation' && nodeForm.result !== '已到店') {
+    const flag = nodeForm.result === '申请改期' ? '顾客申请改期' : '未到店：需客服再次联系'
+    record.flags.push(flag)
+    addLog(record, '登记到店结果', `${nodeForm.result}，流程保留在确认到店节点`, from, from, 'warning')
     nodeDialogVisible.value = false
-    ElMessage.warning('已登记未到店，任务仍保留在待接待')
+    ElMessage.warning('已登记到店结果，任务仍保留在确认到店')
     return
   }
   if (from === 'floorControl') {
-    record.arrivalTime = nodeForm.time
-    record.floorControl = { createdTime: record.floorControl?.createdTime || nowText(), arrivalTime: nodeForm.time, scheduledTime: nowText(), result: nodeForm.result, note: nodeForm.note, managerSuggestion: nodeForm.project }
+    record.floorControl = { createdTime: record.floorControl?.createdTime || nowText(), scheduledTime: nowText(), note: nodeForm.note, managerSuggestion: nodeForm.project }
     Object.assign(record.assignments, { butler: nodeForm.butler, consultant: nodeForm.consultant, director: nodeForm.director, manager: nodeForm.manager })
     record.estimatedProject = nodeForm.project
+  }
+  if (from === 'arrivalConfirmation') {
+    record.arrivalTime = nodeForm.time
+    record.arrivalConfirmation = { confirmedTime: nowText(), arrivalTime: nodeForm.time, result: nodeForm.result, note: nodeForm.note }
+    record.diagnosisType = nodeForm.diagnosisType
   }
   if (from === 'doctorDiagnosis') {
     record.department = nodeForm.department
@@ -1238,7 +1253,7 @@ async function submitNode() {
     }
     record.paymentType = nodeForm.paymentType
     record.revenue = nodeForm.paymentType === 'cash' ? nodeForm.revenue : 0
-    record.cardAmount = ['card','member'].includes(nodeForm.paymentType) ? nodeForm.cardAmount : 0
+    record.cardAmount = ['singleProject','activityPackage','member'].includes(nodeForm.paymentType) ? nodeForm.cardAmount : 0
     record.followupDate = calculateFollowupDate(nodeForm.projects)
     record.serviceExecution = { time: nowText(), projects: [...nodeForm.projects], paymentType: nodeForm.paymentType, note: nodeForm.note }
     pushMessage(record, `已按项目回访规则生成预计回访：${record.followupDate}`)
@@ -1370,7 +1385,9 @@ function maskPhone(phone) {
 
 function paymentLabel(record) {
   if (record.paymentType === 'cash') return `现金/支付 ¥${formatMoney(record.revenue)}`
-  if (record.paymentType === 'card') return `耗卡 ¥${formatMoney(record.cardAmount)}`
+  if (['card', 'singleProject'].includes(record.paymentType)) return `单项目次数 ¥${formatMoney(record.cardAmount)}`
+  if (record.paymentType === 'activityPackage') return `活动套餐次数 ¥${formatMoney(record.cardAmount)}`
+  if (record.paymentType === 'member') return `会员充值余额 ¥${formatMoney(record.cardAmount)}`
   return '未消费'
 }
 
@@ -1425,20 +1442,24 @@ function consumeProjectMaterials(record, selectedProjects) {
 }
 
 function consumeCustomerAssets(record, selectedProjects, paymentType, amount) {
-  if (!['card','member'].includes(paymentType)) return { ok: true }
+  if (!['card','singleProject','activityPackage','member'].includes(paymentType)) return { ok: true }
   const key = 'cosmetic-customer-archive-v1'
   const customers = JSON.parse(localStorage.getItem(key) || '[]')
   const customer = customers.find(item => String(item.phone || '').replace(/\D/g,'') === String(record.vip1?.phone || '').replace(/\D/g,''))
   if (!customer) return { ok: true }
   if (paymentType === 'member') {
     if (Number(customer.balance || 0) < Number(amount || 0)) return { ok:false, message:'会员充值余额不足' }
+    const before = Number(customer.balance || 0)
     customer.balance -= Number(amount || 0)
-    customer.logs ||= []; customer.logs.push({ id:`LG${Date.now()}`, time:nowText(), action:'服务扣减会员余额', detail:`业务单${record.id}扣减¥${amount}`, type:'primary' })
+    customer.logs ||= []; customer.logs.push({ id:`LG${Date.now()}`, time:nowText(), action:'服务扣减会员余额', detail:`业务单${record.id}扣减¥${amount}`, type:'primary', before, after:customer.balance })
+    customer.assetDeductions ||= []; customer.assetDeductions.push({ id:`AD${Date.now()}`, time:nowText(), recordId:record.id, source:'memberBalance', amount:Number(amount || 0), projects:[...selectedProjects], remaining:customer.balance })
   } else {
-    const available = selectedProjects.map(project => customer.packages?.find(item => item.project === project && item.status === 'active' && item.used < item.purchased && item.expiry >= today)).filter(Boolean)
+    const sourceType = paymentType === 'activityPackage' ? 'activityPackage' : paymentType === 'singleProject' ? 'singleProject' : ''
+    const available = selectedProjects.map(project => customer.packages?.find(item => item.project === project && item.status === 'active' && item.used < item.purchased && item.expiry >= today && (!sourceType || item.sourceType === sourceType))).filter(Boolean)
     if (available.length < selectedProjects.length) return { ok:false, message:'存在项目/套餐次数不足或已过期' }
-    available.forEach(item => { item.used += 1 })
-    customer.logs ||= []; customer.logs.push({ id:`LG${Date.now()}`, time:nowText(), action:'服务核销项目/套餐', detail:`业务单${record.id}核销：${selectedProjects.join('、')}`, type:'primary' })
+    const deductions = available.map(item => { item.used += 1; return { project:item.project, source:item.sourceType || 'legacyProject', remaining:item.purchased - item.used } })
+    customer.logs ||= []; customer.logs.push({ id:`LG${Date.now()}`, time:nowText(), action:'服务核销项目资产', detail:`业务单${record.id}核销：${deductions.map(item => `${item.project}（${item.source === 'activityPackage' ? '活动套餐' : '单项目'}）`).join('、')}`, type:'primary' })
+    customer.assetDeductions ||= []; customer.assetDeductions.push({ id:`AD${Date.now()}`, time:nowText(), recordId:record.id, source:sourceType || 'legacyProject', amount:Number(amount || 0), projects:deductions })
   }
   localStorage.setItem(key, JSON.stringify(customers))
   return { ok: true }
@@ -1478,7 +1499,7 @@ function buildInitialLogs(id, status, index) {
 }
 
 function normalizeRecord(record) {
-  const legacyStatus = { invited: 'floorControl', reception: 'floorControl', triage: 'floorControl', scheduling: 'doctorDiagnosis' }
+  const legacyStatus = { invited: 'floorControl', reception: 'arrivalConfirmation', triage: 'doctorDiagnosis', scheduling: 'doctorDiagnosis' }
   const normalized = {
     ...record,
     status: legacyStatus[record.status] || record.status,
@@ -1565,7 +1586,43 @@ function createAppointmentSamples() {
 }
 
 function statusName(status) {
-  return statusMeta[status]?.label || status
+  return statusMeta[status]?.label || ({ invited:'市场邀约', reception:'确认到店', triage:'场控排诊', scheduling:'医生排诊', service:'服务执行', followup:'顾客回访', completed:'服务完成', cancelled:'服务取消' }[status] || '未定义阶段')
+}
+
+function stageOperationTime(record) {
+  const configured = {
+    floorControl: record.floorControl?.scheduledTime || record.floorControl?.createdTime,
+    doctorDiagnosis: record.doctorDiagnosis?.scheduledTime,
+    service: record.serviceExecution?.time,
+    followup: record.followupRecords?.at(-1)?.time,
+    completed: record.completedDate,
+    cancelled: record.cancelledTime
+  }[record.status]
+  if (configured) return configured
+  const aliases = { floorControl:['floorControl','invited','reception','triage'], doctorDiagnosis:['doctorDiagnosis','scheduling'], service:['service'], followup:['followup'], completed:['completed'], cancelled:['cancelled'] }
+  const matching = [...(record.logs || [])].reverse().find(log => aliases[record.status]?.includes(log.toStatus))
+  return matching?.time || `${record.businessDate || '—'} ${record.appointmentTime || ''}`.trim()
+}
+
+function importInfo(record) {
+  const source = record.importSnapshot || {}
+  return { time: source.time || record.logs?.[0]?.time || '—', market: source.market || record.assignments?.market || '—', service: source.service || record.assignments?.service || '—', note: source.remark || record.note || '—' }
+}
+function floorInfo(record) {
+  const source = record.floorControl || {}
+  return { createdTime: source.createdTime || record.logs?.[0]?.time || '—', arrivalTime: source.arrivalTime || record.arrivalTime || '待确认', operator: record.assignments?.floorControl || '待分配', managerSuggestion: source.managerSuggestion || record.estimatedProject || '—' }
+}
+function doctorInfo(record) {
+  const source = record.doctorDiagnosis || {}
+  return { doctor: source.doctor || record.assignments?.doctor || '待分配', nurse: source.nurse || record.assignments?.nurse || '待分配', numbingTime: source.numbingTime || '待设置', medication: source.medication || '—' }
+}
+function followupInfo(record) {
+  const latest = [...(record.followupRecords || [])].at(-1)
+  return latest?.note || (record.status === 'followup' ? '待回访' : '—')
+}
+function localizedLogText(value) {
+  const labels = { invited:'市场邀约', reception:'确认到店', triage:'场控排诊', scheduling:'医生排诊', floorControl:'场控排诊', doctorDiagnosis:'医生排诊', service:'服务执行', followup:'顾客回访', completed:'服务完成', cancelled:'服务取消' }
+  return Object.entries(labels).reduce((text, [key, label]) => text.replaceAll(key, label), String(value || '—'))
 }
 
 function staffDisplay(record) {
@@ -1582,6 +1639,11 @@ function staffDisplay(record) {
     ,{ label: '医生', name: record.assignments.doctor || record.doctorDiagnosis?.doctor }
     ,{ label: '护士', name: record.assignments.nurse || record.doctorDiagnosis?.nurse }
   ]
+}
+
+function schedulingStaff(record) {
+  const roleOrder = ['场控', '管家', '咨询', '总监', '经理', '医生', '护士']
+  return staffDisplay(record).filter((item) => roleOrder.includes(item.label))
 }
 
 function attentionTone(record) {

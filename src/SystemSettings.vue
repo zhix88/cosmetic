@@ -50,8 +50,11 @@
             <el-table-column prop="code" label="编码" width="105" /><el-table-column prop="name" label="项目名称" min-width="140" /><el-table-column prop="category" label="分类" width="100" /><el-table-column prop="department" label="科室" width="110" /><el-table-column prop="price" label="标准价" width="95"><template #default="{ row }">¥{{ money(row.price) }}</template></el-table-column><el-table-column prop="cardPrice" label="耗卡价" width="95"><template #default="{ row }">¥{{ money(row.cardPrice) }}</template></el-table-column><el-table-column prop="duration" label="时长" width="75"><template #default="{ row }">{{ row.duration }}分钟</template></el-table-column><el-table-column label="标准耗材成本" width="120"><template #default="{ row }">¥{{ money(projectMaterialCost(row)) }}</template></el-table-column><el-table-column label="状态" width="80"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status === 'active' ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="150"><template #default="{ row }"><el-button link type="primary" :disabled="!isAdmin" @click="openEntity('project', row)">编辑</el-button><el-button link @click="openMaterialTemplate(row)">耗材模板</el-button></template></el-table-column>
           </el-table>
           <ListPagination :total="filteredProjects.length" v-model="listPage" />
-          <div class="settings-section-head" style="margin-top:24px"><div><h3>活动套餐</h3><p>套餐售价按包含项目总价后的优惠价维护</p></div><el-button type="primary" :disabled="!isAdmin" @click="addActivityPackage">新增活动套餐</el-button></div>
-          <el-table :data="activityPackages" stripe><el-table-column prop="name" label="套餐名称" min-width="150" /><el-table-column label="包含项目与次数" min-width="240"><template #default="{ row }">{{ row.projects.map(x=>`${x.name} × ${x.count}`).join('、') }}</template></el-table-column><el-table-column label="项目总价" width="120"><template #default="{ row }">¥{{ money(row.projects.reduce((sum,x)=>sum+x.count*x.unitPrice,0)) }}</template></el-table-column><el-table-column label="套餐总价" width="120"><template #default="{ row }">¥{{ money(row.packagePrice) }}</template></el-table-column><el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.status==='active'?'success':'info'">{{ row.status==='active'?'启用':'停用' }}</el-tag></template></el-table-column></el-table>
+        </template>
+
+        <template v-else-if="activeModule === 'packages'">
+          <SettingsHeader title="活动套餐" subtitle="独立维护促销套餐、项目次数及优惠套餐价" action="新增活动套餐" :disabled="!isAdmin" @action="openActivityPackageDialog()" />
+          <el-table :data="activityPackages" stripe><el-table-column prop="name" label="套餐名称" min-width="150" /><el-table-column label="包含项目与次数" min-width="240"><template #default="{ row }">{{ row.projects.map(x=>`${x.name} × ${x.count}`).join('、') }}</template></el-table-column><el-table-column label="项目总价" width="120"><template #default="{ row }">¥{{ money(row.projects.reduce((sum,x)=>sum+x.count*x.unitPrice,0)) }}</template></el-table-column><el-table-column label="套餐总价" width="120"><template #default="{ row }">¥{{ money(row.packagePrice) }}</template></el-table-column><el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.status==='active'?'success':'info'">{{ row.status==='active'?'启用':'停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" :disabled="!isAdmin" @click="openActivityPackageDialog(row)">编辑</el-button></template></el-table-column></el-table>
         </template>
 
         <template v-else-if="activeModule === 'performance'">
@@ -157,7 +160,7 @@
           <div class="experience-head"><h3 class="form-section-title">从业经历</h3><el-button link type="primary" @click="addExperience">添加经历</el-button></div>
           <div v-for="(item, index) in entityForm.experiences" :key="index" class="experience-row"><el-input v-model="item.company" placeholder="任职机构" /><el-input v-model="item.position" placeholder="岗位" /><el-date-picker v-model="item.startDate" type="month" value-format="YYYY-MM" placeholder="开始时间" /><el-date-picker v-model="item.endDate" type="month" value-format="YYYY-MM" placeholder="结束时间" /><el-input v-model="item.description" placeholder="主要工作内容" /><el-button link type="danger" @click="entityForm.experiences.splice(index, 1)">删除</el-button></div>
         </template>
-        <template v-else-if="entityType === 'project'"><div class="settings-form-grid"><el-form-item label="项目编码" prop="code"><el-input v-model="entityForm.code" /></el-form-item><el-form-item label="项目名称" prop="name"><el-input v-model="entityForm.name" /></el-form-item><el-form-item label="分类"><el-select v-model="entityForm.category"><el-option v-for="x in projectCatalog" :key="x.label" :label="x.label" :value="x.label" /></el-select></el-form-item><el-form-item label="科室"><el-select v-model="entityForm.department"><el-option v-for="x in departments" :key="x" :label="x" :value="x" /></el-select></el-form-item><el-form-item label="标准价"><el-input-number v-model="entityForm.price" :min="0" /></el-form-item><el-form-item label="耗卡价"><el-input-number v-model="entityForm.cardPrice" :min="0" /></el-form-item><el-form-item label="服务时长"><el-input-number v-model="entityForm.duration" :min="10" :step="10" /></el-form-item><el-form-item label="疗程次数"><el-input-number v-model="entityForm.courseCount" :min="1" /></el-form-item></div></template>
+        <template v-else-if="entityType === 'project'"><div class="settings-form-grid"><el-form-item label="项目编码" prop="code"><el-input v-model="entityForm.code" /></el-form-item><el-form-item label="项目名称" prop="name"><el-input v-model="entityForm.name" /></el-form-item><el-form-item label="分类"><el-select v-model="entityForm.category"><el-option v-for="x in projectCatalog" :key="x.label" :label="x.label" :value="x.label" /></el-select></el-form-item><el-form-item label="科室"><el-select v-model="entityForm.department"><el-option v-for="x in departments" :key="x" :label="x" :value="x" /></el-select></el-form-item><el-form-item label="标准价"><el-input-number v-model="entityForm.price" :min="0" /></el-form-item><el-form-item label="耗卡价"><el-input-number v-model="entityForm.cardPrice" :min="0" /></el-form-item><el-form-item label="服务时长（分钟）"><el-input-number v-model="entityForm.duration" :min="10" :step="10" /></el-form-item><el-form-item label="默认回访时长（天）"><el-input-number v-model="entityForm.followupDays" :min="1" :max="365" /></el-form-item><el-form-item label="疗程次数"><el-input-number v-model="entityForm.courseCount" :min="1" /></el-form-item></div></template>
         <template v-else-if="entityType === 'material'"><div class="settings-form-grid"><el-form-item label="物资编码" prop="code"><el-input v-model="entityForm.code" /></el-form-item><el-form-item label="物资名称" prop="name"><el-input v-model="entityForm.name" /></el-form-item><el-form-item label="分类"><el-select v-model="entityForm.category"><el-option v-for="x in materialCategories" :key="x" :label="x" :value="x" /></el-select></el-form-item><el-form-item label="规格"><el-input v-model="entityForm.spec" /></el-form-item><el-form-item label="单位"><el-input v-model="entityForm.unit" /></el-form-item><el-form-item label="品牌"><el-input v-model="entityForm.brand" /></el-form-item><el-form-item label="供应商"><el-input v-model="entityForm.supplier" /></el-form-item><el-form-item label="参考成本"><el-input-number v-model="entityForm.cost" :min="0" /></el-form-item><el-form-item label="最低库存"><el-input-number v-model="entityForm.minStock" :min="0" /></el-form-item><el-form-item label="最高库存"><el-input-number v-model="entityForm.maxStock" :min="1" /></el-form-item></div></template>
         <template v-else-if="entityType === 'org'"><div class="settings-form-grid"><el-form-item label="组织类型"><el-select v-model="entityForm.nodeType" :disabled="Boolean(editingId)"><el-option label="门店" value="store" /><el-option label="部门" value="department" /></el-select></el-form-item><el-form-item v-if="entityForm.nodeType === 'store'" label="所属区域"><el-select v-model="entityForm.region"><el-option v-for="x in orgRegions" :key="x.id" :label="x.name" :value="x.name" /></el-select></el-form-item><el-form-item v-else label="所属门店"><el-select v-model="entityForm.storeId"><el-option v-for="x in flatStores" :key="x.id" :label="x.name" :value="x.id" /></el-select></el-form-item><el-form-item :label="entityForm.nodeType === 'department' ? '部门名称' : '门店名称'" prop="name"><el-input v-model="entityForm.name" /></el-form-item><el-form-item label="负责人"><el-input v-model="entityForm.manager" /></el-form-item><el-form-item label="联系电话"><el-input v-model="entityForm.phone" /></el-form-item><el-form-item label="状态"><el-select v-model="entityForm.status"><el-option label="启用" value="active" /><el-option label="停用" value="disabled" /></el-select></el-form-item><el-form-item v-if="entityForm.nodeType === 'store'" label="地址" class="full"><el-input v-model="entityForm.address" /></el-form-item></div></template>
         <template v-else>
@@ -207,6 +210,11 @@
       <el-table :data="templateRows"><el-table-column label="物资"><template #default="{ row }"><el-select v-model="row.materialId"><el-option v-for="x in materials.filter(m => m.status === 'active')" :key="x.id" :label="x.name" :value="x.id" /></el-select></template></el-table-column><el-table-column label="标准用量" width="130"><template #default="{ row }"><el-input-number v-model="row.quantity" :min="0.01" :step="1" /></template></el-table-column><el-table-column label="允许浮动%" width="120"><template #default="{ row }"><el-input-number v-model="row.tolerance" :min="0" :max="100" /></template></el-table-column><el-table-column width="70"><template #default="{ $index }"><el-button link type="danger" @click="templateRows.splice($index,1)">删除</el-button></template></el-table-column></el-table>
       <el-button class="add-template-row" @click="templateRows.push({ materialId: '', quantity: 1, tolerance: 20 })">添加耗材</el-button>
       <template #footer><el-button @click="templateVisible = false">取消</el-button><el-button type="primary" @click="saveMaterialTemplate">保存模板</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="activityPackageVisible" :title="activityPackageEditingId ? '编辑活动套餐' : '新增活动套餐'" width="720px">
+      <el-form :model="activityPackageForm" label-position="top"><div class="settings-form-grid"><el-form-item label="套餐名称"><el-input v-model="activityPackageForm.name" /></el-form-item><el-form-item label="套餐总价（元）"><el-input-number v-model="activityPackageForm.packagePrice" :min="0" :step="100" /></el-form-item><el-form-item label="有效时长（月）"><el-input-number v-model="activityPackageForm.validMonths" :min="1" :max="120" /></el-form-item><el-form-item label="状态"><el-select v-model="activityPackageForm.status"><el-option label="启用" value="active" /><el-option label="停用" value="disabled" /></el-select></el-form-item></div><div class="package-project-head"><h3 class="form-section-title">包含项目</h3><el-button link type="primary" @click="addPackageProject">添加项目</el-button></div><el-table :data="activityPackageForm.projects"><el-table-column label="项目"><template #default="{ row }"><el-select v-model="row.name" @change="syncPackageProjectPrice(row)"><el-option v-for="project in projects.filter(x=>x.status==='active')" :key="project.id" :label="project.name" :value="project.name" /></el-select></template></el-table-column><el-table-column label="项目次数" width="130"><template #default="{ row }"><el-input-number v-model="row.count" :min="1" /></template></el-table-column><el-table-column label="项目单价" width="150"><template #default="{ row }"><el-input-number v-model="row.unitPrice" :min="0" /></template></el-table-column><el-table-column label="项目总价" width="120"><template #default="{ row }">¥{{ money(row.count * row.unitPrice) }}</template></el-table-column><el-table-column width="70"><template #default="{ $index }"><el-button link type="danger" @click="activityPackageForm.projects.splice($index,1)">删除</el-button></template></el-table-column></el-table><div class="package-project-total"><span>包含项目总价</span><strong>¥{{ money(activityPackageProjectTotal) }}</strong><small>可据此填写优惠后的套餐总价</small></div></el-form>
+      <template #footer><el-button @click="activityPackageVisible=false">取消</el-button><el-button type="primary" @click="saveActivityPackage">保存套餐</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="importVisible" title="Excel导入演示" width="560px"><el-alert title="原型将校验编码重复、门店、角色、单位和必填字段；不会上传文件到网络。" type="info" :closable="false" /><div class="import-zone"><el-icon><UploadFilled /></el-icon><strong>选择员工或项目Excel文件</strong><p>支持 .xlsx / .csv，当前原型展示校验流程</p><input type="file" accept=".xlsx,.csv" @change="simulateImport" /></div><template #footer><el-button @click="importVisible = false">关闭</el-button></template></el-dialog>
@@ -266,11 +274,16 @@ const performanceForm = reactive({})
 const performanceEditingId = ref(null)
 const performanceRoleFilter = ref('all')
 const performanceCategoryFilter = ref('all')
+const activityPackageVisible = ref(false)
+const activityPackageEditingId = ref(null)
+const activityPackageForm = reactive({})
+const activityPackageProjectTotal = computed(() => (activityPackageForm.projects || []).reduce((sum,item) => sum + Number(item.count || 0) * Number(item.unitPrice || 0), 0))
 
 const modules = [
   { key: 'org', label: '组织架构', desc: '区域、门店、部门', icon: OfficeBuilding },
   { key: 'staff', label: '员工管理', desc: '员工、岗位、兼任', icon: User },
-  { key: 'projects', label: '项目管理', desc: '项目、套餐、价格', icon: Briefcase },
+  { key: 'projects', label: '项目管理', desc: '项目、价格与回访周期', icon: Briefcase },
+  { key: 'packages', label: '活动套餐', desc: '促销套餐与优惠价格', icon: Briefcase },
   { key: 'performance', label: '业绩配置', desc: '角色、项目、提成', icon: Coin },
   { key: 'inventory', label: '耗材管理', desc: '库存、批次、流水', icon: Goods },
   { key: 'roles', label: '角色权限', desc: '页面与操作权限', icon: Key },
@@ -301,7 +314,7 @@ const storeRules = reactive(saved?.storeRules || Object.fromEntries(props.stores
 const dictionaries = reactive(saved?.dictionaries || seedDictionaries())
 if (!dictionaries.some(x=>x.key==='tag-consumption')) dictionaries.push({key:'tag-consumption',label:'客户标签：消费力评级',items:['高消费力','中消费力','潜力客户'],newValue:''})
 if (!dictionaries.some(x=>x.key==='tag-satisfaction')) dictionaries.push({key:'tag-satisfaction',label:'客户标签：满意度层级',items:['高度满意','满意','需关注'],newValue:''})
-const activityPackages = reactive(saved?.activityPackages || [{id:'promo-1',name:'焕颜体验套餐',projects:[{name:'面部护理',count:3,unitPrice:980},{name:'水光项目',count:1,unitPrice:2800}],packagePrice:4800,status:'active'}])
+const activityPackages = reactive((saved?.activityPackages || [{id:'promo-1',name:'焕颜体验套餐',projects:[{name:'面部护理',count:3,unitPrice:980},{name:'水光项目',count:1,unitPrice:2800}],packagePrice:4800,validMonths:12,status:'active'}]).map(item=>({validMonths:Number(item.validMonths || item.validYears * 12 || 12),...item})))
 const auditLogs = reactive(saved?.auditLogs || [])
 const materials = reactive(inventorySaved?.materials || seedMaterials())
 const batches = reactive(inventorySaved?.batches || seedBatches())
@@ -428,7 +441,34 @@ function expiryLabel(date,store){const d=daysUntil(date);return d<0?'已过期':
 function expiryType(date,store){const d=daysUntil(date);return d<0?'danger':d<=ruleForStore(store).expiryWarningDays?'warning':'success'}
 function daysUntil(date){return Math.ceil((new Date(`${date}T12:00:00`)-new Date(`${today()}T12:00:00`))/86400000)}
 function addDict(dict){if(!isAdmin.value||!dict.newValue?.trim())return;if(!dict.items.includes(dict.newValue.trim()))dict.items.push(dict.newValue.trim());addAudit('dictionary','新增字典项',dict.label,dict.newValue);dict.newValue=''}
-function addActivityPackage(){const first=projects.find(x=>x.status==='active');if(!first)return ElMessage.warning('请先配置可用项目');activityPackages.push({id:`promo-${Date.now()}`,name:`新活动套餐${activityPackages.length+1}`,projects:[{name:first.name,count:1,unitPrice:first.price}],packagePrice:first.price,status:'active'});addAudit('projects','新增活动套餐',`新活动套餐${activityPackages.length}`,'已按首个可用项目生成，可在本地演示数据中继续维护')}
+function openActivityPackageDialog(row){
+  activityPackageEditingId.value=row?.id||null
+  Object.keys(activityPackageForm).forEach(key=>delete activityPackageForm[key])
+  Object.assign(activityPackageForm,row?{...JSON.parse(JSON.stringify(row)),validMonths:Number(row.validMonths || row.validYears * 12 || 12)}:{name:'',projects:[],packagePrice:0,validMonths:12,status:'active'})
+  if(!activityPackageForm.projects.length)addPackageProject()
+  activityPackageVisible.value=true
+}
+function addPackageProject(){
+  const first=projects.find(item=>item.status==='active')
+  if(!first)return ElMessage.warning('请先在项目管理中配置可用项目')
+  activityPackageForm.projects.push({name:first.name,count:1,unitPrice:first.price})
+}
+function syncPackageProjectPrice(row){
+  const project=projects.find(item=>item.name===row.name)
+  if(project)row.unitPrice=project.price
+}
+function saveActivityPackage(){
+  const name=activityPackageForm.name?.trim()
+  if(!name)return ElMessage.warning('请填写套餐名称')
+  if(!activityPackageForm.projects?.length)return ElMessage.warning('请至少添加一个套餐项目')
+  const payload=JSON.parse(JSON.stringify({...activityPackageForm,name,validMonths:activityPackageForm.validMonths||12}))
+  delete payload.validYears
+  if(activityPackageEditingId.value)Object.assign(activityPackages.find(item=>item.id===activityPackageEditingId.value),payload)
+  else activityPackages.push({...payload,id:`promo-${Date.now()}`})
+  addAudit('packages',activityPackageEditingId.value?'编辑活动套餐':'新增活动套餐',name,`包含${payload.projects.length}个项目，套餐总价¥${payload.packagePrice}`)
+  activityPackageVisible.value=false
+  ElMessage.success('活动套餐已保存')
+}
 function removeDict(dict,item){if(!isAdmin.value)return;dict.items.splice(dict.items.indexOf(item),1);addAudit('dictionary','删除字典项',dict.label,item)}
 function addAudit(module,action,object,detail){auditLogs.push({id:`AL${Date.now()}${Math.random()}`,time:now(),module,moduleLabel:modules.find(x=>x.key===module)?.label||module,action,object,operator:`${props.roleMeta.label}·${props.roleMeta.name}`,detail})}
 function pageLabel(key){return pageOptions.find(x=>x.key===key)?.label||key}

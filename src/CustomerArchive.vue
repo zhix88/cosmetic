@@ -73,24 +73,21 @@
       </div>
     </section>
 
-    <el-drawer v-model="detailVisible" size="780px" :with-header="false">
+    <el-drawer v-model="detailVisible" size="780px" :with-header="false" class="customer-detail-drawer">
       <template v-if="activeCustomer">
         <div class="archive-drawer-head">
           <div class="archive-profile">
             <span>{{ activeCustomer.name.slice(0, 1) }}</span>
             <div><p>顾客编号 {{ activeCustomer.id }}</p><h2>{{ activeCustomer.name }}</h2><small>{{ maskPhone(activeCustomer.phone) }} · {{ activeCustomer.store }}</small></div>
           </div>
-          <div class="archive-head-actions">
-            <el-tag :type="statusType(activeCustomer.status)">{{ statusLabel(activeCustomer.status) }}</el-tag>
-            <el-button @click="openCustomerForm(activeCustomer)">编辑资料</el-button>
-          </div>
+          <div class="archive-head-actions"><el-tag :type="statusType(activeCustomer.status)">{{ statusLabel(activeCustomer.status) }}</el-tag></div>
         </div>
 
         <div class="asset-overview">
-          <article><p>储值余额</p><strong>¥{{ money(activeCustomer.balance) }}</strong><el-button v-if="canManageAssets" link type="primary" @click="openRechargeDialog">会员充值</el-button><el-button v-if="canManageAssets" link type="primary" @click="openAssetDialog('balance')">调整</el-button></article>
-          <article><p>会员积分</p><strong>{{ activeCustomer.points }}</strong><el-button v-if="canManageAssets" link type="primary" @click="openAssetDialog('points')">调整</el-button></article>
+          <article><p>储值余额</p><strong>¥{{ money(activeCustomer.balance) }}</strong></article>
+          <article><p>会员积分</p><strong>{{ activeCustomer.points }}</strong></article>
           <article><p>累计消费</p><strong>¥{{ money(customerSpend(activeCustomer)) }}</strong><small>{{ customerRecords(activeCustomer).length }} 次到店</small></article>
-          <article><p>剩余项目</p><strong>{{ remainingCount(activeCustomer) }}</strong><el-button v-if="canManageAssets" link type="primary" @click="openPackageDialog()">购买套餐</el-button></article>
+          <article><p>剩余项目</p><strong>{{ remainingCount(activeCustomer) }}</strong></article>
         </div>
 
         <el-tabs v-model="detailTab">
@@ -127,6 +124,7 @@
             <div class="tab-action-row"><p>套餐次数只能通过购买或核销调整，并保留完整日志。</p><el-button v-if="canManageAssets" type="primary" @click="openPackageDialog()">购买套餐</el-button></div>
             <el-table :data="activeCustomer.packages" empty-text="暂无已购项目">
               <el-table-column prop="project" label="项目" min-width="150" />
+              <el-table-column label="资产来源" min-width="125"><template #default="{ row }">{{ row.sourceType === 'activityPackage' ? row.packageName || '活动套餐' : '单项目次数' }}</template></el-table-column>
               <el-table-column prop="purchased" label="购买次数" width="90" align="center" />
               <el-table-column prop="used" label="已用" width="70" align="center" />
               <el-table-column label="剩余" width="70" align="center"><template #default="{ row }">{{ row.purchased - row.used }}</template></el-table-column>
@@ -160,6 +158,18 @@
             <el-empty v-else description="暂无影像资料" />
           </el-tab-pane>
 
+          <el-tab-pane label="回访记录" name="followups">
+            <div class="tab-action-row"><p>沉淀顾客术后沟通、满意度、消费力评级及回访影像。</p><el-button type="primary" @click="openFollowupDialog">新增回访记录</el-button></div>
+            <el-timeline v-if="customerFollowups.length" class="followup-timeline">
+              <el-timeline-item v-for="item in customerFollowups" :key="item.id" :timestamp="item.date" type="success">
+                <div class="followup-record-head"><strong>{{ item.method }}回访</strong><el-tag size="small" :type="satisfactionType(item.satisfaction)">{{ item.satisfaction }}</el-tag><el-tag size="small" effect="plain">{{ item.spendingPower }}</el-tag></div>
+                <p>{{ item.note }}</p><small v-if="item.nextDate">下次跟进：{{ item.nextDate }}</small>
+                <div v-if="followupPhotosFor(item.id).length" class="followup-photo-list"><el-image v-for="photo in followupPhotosFor(item.id)" :key="photo.id" :src="photo.dataUrl" :preview-src-list="followupPhotos.map(x=>x.dataUrl)" fit="cover" /></div>
+              </el-timeline-item>
+            </el-timeline>
+            <el-empty v-else description="暂无回访记录" />
+          </el-tab-pane>
+
           <el-tab-pane label="资产与操作日志" name="logs">
             <el-timeline>
               <el-timeline-item v-for="log in sortedLogs(activeCustomer)" :key="log.id" :timestamp="log.time" :type="log.type || 'primary'">
@@ -169,6 +179,15 @@
             </el-timeline>
           </el-tab-pane>
         </el-tabs>
+        <div class="archive-action-footer">
+          <el-button @click="openCustomerForm(activeCustomer)">编辑资料</el-button>
+          <template v-if="canManageAssets">
+            <el-button @click="openAssetDialog('balance')">调整储值</el-button>
+            <el-button @click="openAssetDialog('points')">调整积分</el-button>
+            <el-button @click="openPackageDialog(null, 'activityPackage')">购买活动套餐</el-button>
+            <el-button type="primary" @click="openRechargeDialog">会员充值</el-button>
+          </template>
+        </div>
       </template>
     </el-drawer>
 
@@ -206,7 +225,7 @@
 
     <el-dialog v-model="rechargeVisible" title="会员充值" width="520px">
       <el-form :model="rechargeForm" label-position="top">
-        <div class="archive-form-grid"><el-form-item label="充值金额"><el-input-number v-model="rechargeForm.amount" :min="1" :step="1000" /></el-form-item><el-form-item label="折扣比例"><el-input-number v-model="rechargeForm.discount" :min="0.01" :max="1" :step="0.01" /></el-form-item><el-form-item label="实际付款金额"><el-input-number v-model="rechargeForm.paid" :min="0" :step="100" /></el-form-item><el-form-item label="VIP等级"><el-select v-model="rechargeForm.memberLevel"><el-option v-for="level in memberLevels" :key="level" :label="level" :value="level" /></el-select></el-form-item></div>
+        <div class="archive-form-grid"><el-form-item label="充值金额"><el-input-number v-model="rechargeForm.amount" :min="1" :step="1000" @change="syncRechargePaid" /></el-form-item><el-form-item label="折扣比例"><el-input-number v-model="rechargeForm.discount" :min="0.01" :max="1" :step="0.01" @change="syncRechargePaid" /></el-form-item><el-form-item label="实际付款金额"><el-input-number v-model="rechargeForm.paid" :min="0" :step="100" @change="markRechargePaidManual" /><small class="form-help">默认按充值金额 × 折扣比例计算</small></el-form-item><el-form-item label="VIP等级"><el-select v-model="rechargeForm.memberLevel"><el-option v-for="level in memberLevels" :key="level" :label="level" :value="level" /></el-select></el-form-item></div>
         <el-form-item label="操作备注"><el-input v-model="rechargeForm.note" type="textarea" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="rechargeVisible=false">取消</el-button><el-button type="primary" @click="submitRecharge">确认充值</el-button></template>
@@ -215,8 +234,11 @@
     <el-dialog v-model="packageDialogVisible" :title="packageMode === 'purchase' ? '购买项目套餐' : '核销项目套餐'" width="540px">
       <el-form ref="packageFormRef" :model="packageForm" :rules="packageRules" label-position="top">
         <template v-if="packageMode === 'purchase'">
-          <el-form-item label="项目" prop="project"><el-select v-model="packageForm.project" filterable allow-create><el-option-group v-for="group in projectCatalog" :key="group.label" :label="group.label"><el-option v-for="project in group.options" :key="project" :label="project" :value="project" /></el-option-group></el-select></el-form-item>
-          <el-form-item label="购买次数" prop="count"><el-input-number v-model="packageForm.count" :min="1" /></el-form-item>
+          <el-form-item label="资产类型"><el-radio-group v-model="packageForm.sourceType"><el-radio-button value="singleProject">单项目次数</el-radio-button><el-radio-button value="activityPackage">活动套餐</el-radio-button></el-radio-group></el-form-item>
+          <el-form-item v-if="packageForm.sourceType === 'activityPackage'" label="活动套餐"><el-select v-model="packageForm.activityPackageId" @change="applyActivityPackage"><el-option v-for="item in activityPackageOptions" :key="item.id" :label="`${item.name}（¥${money(item.packagePrice)}）`" :value="item.id" /></el-select></el-form-item>
+          <el-form-item v-if="packageForm.sourceType === 'singleProject'" label="项目" prop="project"><el-select v-model="packageForm.project" filterable allow-create><el-option-group v-for="group in projectCatalog" :key="group.label" :label="group.label"><el-option v-for="project in group.options" :key="project" :label="project" :value="project" /></el-option-group></el-select></el-form-item>
+          <el-form-item v-if="packageForm.sourceType === 'singleProject'" label="购买次数" prop="count"><el-input-number v-model="packageForm.count" :min="1" /></el-form-item>
+          <el-form-item v-else label="套餐包含项目"><el-text>{{ selectedActivityPackage?.projects?.map(item => `${item.name} × ${item.count}`).join('、') || '请选择活动套餐' }}</el-text></el-form-item>
           <el-form-item label="购买金额" prop="amount"><el-input-number v-model="packageForm.amount" :min="0" :step="1000" /></el-form-item>
           <el-form-item label="有效期"><el-date-picker v-model="packageForm.expiry" type="date" value-format="YYYY-MM-DD" /></el-form-item>
         </template>
@@ -238,6 +260,15 @@
         <el-form-item label="备注"><el-input v-model="photoForm.note" type="textarea" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="photoDialogVisible = false">取消</el-button><el-button type="primary" @click="savePhoto">压缩并保存</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="followupDialogVisible" title="新增顾客回访" width="620px">
+      <el-form ref="followupFormRef" :model="followupForm" :rules="followupRules" label-position="top">
+        <div class="archive-form-grid"><el-form-item label="回访日期" prop="date"><el-date-picker v-model="followupForm.date" type="date" value-format="YYYY-MM-DD" /></el-form-item><el-form-item label="回访方式" prop="method"><el-select v-model="followupForm.method"><el-option v-for="item in ['电话','微信','到店']" :key="item" :label="item" :value="item" /></el-select></el-form-item><el-form-item label="顾客满意度" prop="satisfaction"><el-select v-model="followupForm.satisfaction"><el-option v-for="item in ['高度满意','满意','一般','不满意']" :key="item" :label="item" :value="item" /></el-select></el-form-item><el-form-item label="消费力评级" prop="spendingPower"><el-select v-model="followupForm.spendingPower"><el-option v-for="item in ['高消费力','中消费力','潜力客户']" :key="item" :label="item" :value="item" /></el-select></el-form-item><el-form-item label="下次跟进"><el-date-picker v-model="followupForm.nextDate" type="date" value-format="YYYY-MM-DD" /></el-form-item></div>
+        <el-form-item label="回访记录" prop="note"><el-input v-model="followupForm.note" type="textarea" :rows="4" /></el-form-item>
+        <el-form-item label="回访照片"><input type="file" accept="image/*" @change="onFollowupPhotoSelected" /><small>可选；照片仅保存在当前浏览器。</small></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="followupDialogVisible=false">取消</el-button><el-button type="primary" @click="saveFollowup">保存回访记录</el-button></template>
     </el-dialog>
   </section>
 </template>
@@ -278,6 +309,7 @@ const customerFormRef = ref()
 const editingCustomerId = ref(null)
 const assetDialogVisible = ref(false)
 const rechargeVisible = ref(false)
+const rechargePaidManually = ref(false)
 const assetFormRef = ref()
 const assetType = ref('balance')
 const packageDialogVisible = ref(false)
@@ -287,12 +319,17 @@ const photoDialogVisible = ref(false)
 const photoFormRef = ref()
 const selectedPhotoFile = ref(null)
 const customerPhotos = ref([])
+const followupPhotos = ref([])
+const followupDialogVisible = ref(false)
+const followupFormRef = ref()
+const selectedFollowupPhotoFile = ref(null)
 
 const customerForm = reactive({})
 const assetForm = reactive({})
 const rechargeForm = reactive({ amount: 1000, discount: 1, paid: 1000, memberLevel: '普通会员', note: '' })
 const packageForm = reactive({})
 const photoForm = reactive({ type: 'before', project: '', date: today(), note: '', file: '' })
+const followupForm = reactive({ date: today(), method: '电话', satisfaction: '满意', spendingPower: '中消费力', nextDate: '', note: '' })
 const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
 const customers = ref(mergeBusinessCustomers(saved, props.records))
 
@@ -320,6 +357,9 @@ const premiumCount = computed(() => scopedCustomers.value.filter((x) => ['金卡
 const totalBalance = computed(() => scopedCustomers.value.reduce((sum, x) => sum + Number(x.balance || 0), 0))
 const totalRemaining = computed(() => scopedCustomers.value.reduce((sum, x) => sum + remainingCount(x), 0))
 const allProjects = computed(() => [...new Set(props.projectCatalog.flatMap((x) => x.options))])
+const customerFollowups = computed(() => [...(activeCustomer.value?.followups || [])].sort((a,b) => b.date.localeCompare(a.date)))
+const activityPackageOptions = computed(() => JSON.parse(localStorage.getItem('cosmetic-settings-data-v1') || 'null')?.activityPackages?.filter(item => item.status === 'active') || [])
+const selectedActivityPackage = computed(() => activityPackageOptions.value.find(item => item.id === packageForm.activityPackageId))
 
 const customerRules = {
   name: [{ required: true, message: '请填写顾客姓名', trigger: 'blur' }],
@@ -346,6 +386,7 @@ const photoRules = {
   date: [{ required: true, message: '请选择拍摄日期', trigger: 'change' }],
   file: [{ validator: (_r, _v, cb) => selectedPhotoFile.value ? cb() : cb(new Error('请选择图片')), trigger: 'change' }]
 }
+const followupRules = { date:[{required:true,message:'请选择回访日期',trigger:'change'}], method:[{required:true,message:'请选择回访方式',trigger:'change'}], satisfaction:[{required:true,message:'请选择满意度',trigger:'change'}], spendingPower:[{required:true,message:'请选择消费力评级',trigger:'change'}], note:[{required:true,message:'请填写回访记录',trigger:'blur'}] }
 
 watch(customers, (value) => localStorage.setItem(STORAGE_KEY, JSON.stringify(value)), { deep: true })
 watch(() => props.records, (value) => { customers.value = mergeBusinessCustomers(customers.value, value) }, { deep: true })
@@ -396,6 +437,7 @@ function mergeBusinessCustomers(existing, records) {
       })
     })
     customer.packages ||= []
+    customer.packages.forEach((pkg) => { pkg.sourceType ||= 'singleProject' })
     projectUsage.forEach((used, project) => {
       const synced = customer.packages.find((pkg) => pkg.origin === 'business-sync' && pkg.project === project)
       if (synced) {
@@ -490,8 +532,13 @@ function openAssetDialog(type) {
 function openRechargeDialog() {
   const customer = activeCustomer.value
   Object.assign(rechargeForm, { amount: 1000, discount: 1, paid: 1000, memberLevel: customer.memberLevel || '普通会员', note: '' })
+  rechargePaidManually.value = false
   rechargeVisible.value = true
 }
+function syncRechargePaid() {
+  if (!rechargePaidManually.value) rechargeForm.paid = Number((Number(rechargeForm.amount || 0) * Number(rechargeForm.discount || 0)).toFixed(2))
+}
+function markRechargePaidManual() { rechargePaidManually.value = true }
 function submitRecharge() {
   const customer = activeCustomer.value
   const expected = Number((rechargeForm.amount * rechargeForm.discount).toFixed(2))
@@ -516,19 +563,32 @@ async function submitAssetAdjustment() {
   assetDialogVisible.value = false
   ElMessage.success('资产调整单已生效')
 }
-function openPackageDialog(pkg) {
+function openPackageDialog(pkg, sourceType = 'singleProject') {
   if (activeCustomer.value.status !== 'active') return ElMessage.warning('暂停或已删除顾客不能调整套餐')
   packageMode.value = pkg ? 'consume' : 'purchase'
   Object.keys(packageForm).forEach((key) => delete packageForm[key])
-  Object.assign(packageForm, pkg ? { id: pkg.id, project: pkg.project, count: 1, remaining: pkg.purchased - pkg.used, reason: '' } : { project: '', count: 1, amount: 0, expiry: addDays(today(), 365), reason: '' })
+  Object.assign(packageForm, pkg ? { id: pkg.id, project: pkg.project, count: 1, remaining: pkg.purchased - pkg.used, reason: '' } : { sourceType, activityPackageId: '', project: '', count: 1, amount: 0, expiry: addDays(today(), 365), reason: '' })
   packageDialogVisible.value = true
+}
+function applyActivityPackage() {
+  const selected = selectedActivityPackage.value
+  if (!selected) return
+  packageForm.amount = selected.packagePrice
+  packageForm.expiry = addMonths(today(), Number(selected.validMonths || Number(selected.validYears || 1) * 12))
 }
 async function submitPackage() {
   if (!await packageFormRef.value?.validate().catch(() => false)) return
   const customer = activeCustomer.value
   if (packageMode.value === 'purchase') {
-    customer.packages.push({ id: `PK${Date.now()}`, project: packageForm.project, purchased: packageForm.count, used: 0, amount: packageForm.amount, expiry: packageForm.expiry, status: 'active' })
-    customer.logs.push(makeLog('购买项目套餐', `${packageForm.project} ${packageForm.count}次，金额¥${money(packageForm.amount)}；${packageForm.reason}`, 'success'))
+    if (packageForm.sourceType === 'activityPackage') {
+      const selected = selectedActivityPackage.value
+      if (!selected) return ElMessage.warning('请选择活动套餐')
+      selected.projects.forEach((item, index) => customer.packages.push({ id: `PK${Date.now()}-${index}`, project: item.name, purchased: item.count, used: 0, amount: Number(item.count * item.unitPrice), expiry: packageForm.expiry, status: 'active', sourceType: 'activityPackage', packageId: selected.id, packageName: selected.name }))
+      customer.logs.push(makeLog('购买活动套餐', `${selected.name}，套餐价¥${money(packageForm.amount)}；${packageForm.reason}`, 'success'))
+    } else {
+      customer.packages.push({ id: `PK${Date.now()}`, project: packageForm.project, purchased: packageForm.count, used: 0, amount: packageForm.amount, expiry: packageForm.expiry, status: 'active', sourceType: 'singleProject' })
+      customer.logs.push(makeLog('购买单项目次数', `${packageForm.project} ${packageForm.count}次，金额¥${money(packageForm.amount)}；${packageForm.reason}`, 'success'))
+    }
   } else {
     const pkg = customer.packages.find((x) => x.id === packageForm.id)
     if (packageForm.count > pkg.purchased - pkg.used) return ElMessage.error('核销次数不能超过剩余次数')
@@ -544,6 +604,30 @@ function onPhotoSelected(event) {
   photoForm.file = selectedPhotoFile.value?.name || ''
   photoFormRef.value?.validateField('file')
 }
+function openFollowupDialog() {
+  Object.assign(followupForm, { date: today(), method: '电话', satisfaction: '满意', spendingPower: '中消费力', nextDate: '', note: '' })
+  selectedFollowupPhotoFile.value = null
+  followupDialogVisible.value = true
+}
+function onFollowupPhotoSelected(event) { selectedFollowupPhotoFile.value = event.target.files?.[0] || null }
+async function saveFollowup() {
+  if (!await followupFormRef.value?.validate().catch(() => false)) return
+  const customer = activeCustomer.value
+  const followup = { id:`FU${Date.now()}`, ...followupForm, operator:`${props.roleMeta.label}·${props.roleMeta.name}`, createdAt:nowText() }
+  customer.followups ||= []
+  customer.followups.push(followup)
+  customer.tags = [...new Set([...(customer.tags || []), followup.satisfaction, followup.spendingPower])]
+  customer.logs.push(makeLog('新增顾客回访', `${followup.method}回访；${followup.satisfaction}；${followup.spendingPower}；${followup.note}`, 'success'))
+  if (selectedFollowupPhotoFile.value) {
+    const dataUrl = await compressImage(selectedFollowupPhotoFile.value)
+    await putPhoto({ id:`FUPH${Date.now()}`, customerId:customer.id, followupId:followup.id, type:'followup', project:'回访照片', date:followup.date, note:followup.note, dataUrl, createdAt:nowText() })
+  }
+  await loadPhotos()
+  followupDialogVisible.value = false
+  ElMessage.success('回访记录已保存')
+}
+function followupPhotosFor(followupId) { return followupPhotos.value.filter(photo => photo.followupId === followupId) }
+function satisfactionType(value) { return ({ '高度满意':'success', '满意':'primary', '一般':'warning', '不满意':'danger' })[value] || 'info' }
 async function savePhoto() {
   if (!await photoFormRef.value?.validate().catch(() => false)) return
   const dataUrl = await compressImage(selectedPhotoFile.value)
@@ -561,7 +645,7 @@ async function deletePhoto(photo) {
   activeCustomer.value.logs.push(makeLog('删除顾客影像', `${photo.project}照片已删除`, 'warning'))
   await loadPhotos()
 }
-async function loadPhotos() { customerPhotos.value = activeCustomer.value ? await getPhotos(activeCustomer.value.id) : [] }
+async function loadPhotos() { const rows = activeCustomer.value ? await getPhotos(activeCustomer.value.id) : []; customerPhotos.value = rows.filter(photo => photo.type !== 'followup'); followupPhotos.value = rows.filter(photo => photo.type === 'followup') }
 function customerRecords(customer) {
   return props.records.filter((record) => [record.vip1, record.vip2].filter(Boolean).some((person) => normalizePhone(person.phone) === normalizePhone(customer.phone)))
     .sort((a, b) => `${b.businessDate} ${b.appointmentTime}`.localeCompare(`${a.businessDate} ${a.appointmentTime}`))
@@ -597,6 +681,7 @@ function makeLog(action, detail, type = 'primary') { return { id: `LG${Date.now(
 function today() { return new Date().toISOString().slice(0, 10) }
 function nowText() { return new Date().toLocaleString('zh-CN', { hour12: false }).replaceAll('/', '-') }
 function addDays(dateString, days) { const date = new Date(`${dateString}T12:00:00`); date.setDate(date.getDate() + days); return date.toISOString().slice(0, 10) }
+function addMonths(dateString, months) { const date = new Date(`${dateString}T12:00:00`); date.setMonth(date.getMonth() + Number(months || 0)); return date.toISOString().slice(0, 10) }
 
 async function compressImage(file) {
   const source = await fileToDataUrl(file)
