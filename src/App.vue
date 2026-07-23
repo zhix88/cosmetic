@@ -656,7 +656,20 @@ const CONFIG_KEY = 'cosmetic-system-config-v1'
 const GUIDE_KEY = 'cosmetic-guide-seen-v1'
 const SETTINGS_KEY = 'cosmetic-settings-data-v1'
 const AUTH_KEY = 'cosmetic-login-session-v1'
-const savedConfig = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null')
+// 演示站会复用浏览器中既有的本地数据。历史版本或手动修改过的数据
+// 可能不是有效 JSON；不能让一条损坏的缓存阻断 Vue 挂载并出现空白页。
+function readLocalJson(key, fallback = null) {
+  const raw = localStorage.getItem(key)
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw)
+  } catch {
+    localStorage.removeItem(key)
+    return fallback
+  }
+}
+
+const savedConfig = readLocalJson(CONFIG_KEY)
 const stores = reactive(savedConfig?.stores || ['科臻澳总店', '金水形象店', '东区旗舰店'])
 const departments = reactive(savedConfig?.departments || ['皮肤管理科', '微整注射科', '抗衰中心', '形体管理科', '私密护理科'])
 const projectCatalog = reactive(savedConfig?.projectCatalog || [
@@ -674,7 +687,7 @@ const defaultEmployees = [
 const defaultRoles = [
   ['market','市场','本人'],['service','客服','本人'],['butler','管家','本人'],['cardConsultant','卡姐','本人'],['beautyConsultant','美导','本人'],['manager','经理','本人'],['floorControl','场控','本店'],['consultant','咨询','本人'],['director','总监','本店'],['doctor','医生','本人'],['nurse','护士','本人'],['storeManager','店长','本店'],['admin','admin','全部门店']
 ].map(([key,label,dataScope])=>({key,label,dataScope,permissions:{workbench:['view','edit'],customers:['view'],appointments:['view'],dashboard:['view','export'],dailyReports:['view','export'],dealReports:['view','export'],...(key==='storeManager'?{settings:['view','edit']}:{}),...(key==='admin'?{settings:['view','edit']}: {})}}))
-const savedSettings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null')
+const savedSettings = readLocalJson(SETTINGS_KEY)
 const employees = ref(ensureAdminEmployee(savedSettings?.staff || defaultEmployees))
 const roleDefinitions = ref(ensureReportPermissions(savedSettings?.roles || defaultRoles))
 const roles = computed(() => employees.value.map((employee) => ({ value: employee.roleKey, label: employee.roleLabel || employee.roleKey, name: employee.name, store: employee.store })))
@@ -724,7 +737,7 @@ const previousStatus = {
   doctorDiagnosis: 'floorControl', service: 'doctorDiagnosis', followup: 'service', completed: 'followup'
 }
 
-const savedSession = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null')
+const savedSession = readLocalJson(AUTH_KEY)
 const currentUser = ref(employees.value.find((item) => item.code === savedSession?.code && item.status === 'active') || null)
 const currentRole = ref(currentUser.value?.roleKey || '')
 const activePage = ref('workbench')
@@ -917,8 +930,8 @@ function createNodeTimes(date, status, seed) {
 
 const historicalRecords = createHistoricalRecords().map(normalizeRecord)
 
-const saved = localStorage.getItem(STORAGE_KEY)
-const records = ref(ensureAppointmentSamples((saved ? JSON.parse(saved) : initialRecords()).map(normalizeRecord)))
+const savedRecords = readLocalJson(STORAGE_KEY, initialRecords())
+const records = ref(ensureAppointmentSamples((Array.isArray(savedRecords) ? savedRecords : initialRecords()).map(normalizeRecord)))
 
 const currentRoleMeta = computed(() => currentUser.value ? { ...currentUser.value, label: currentUser.value.roleLabel || currentUser.value.roleKey } : { name: '未登录', label: '', roleLabel: '', store: '' })
 const pageHeader = computed(() => ({
