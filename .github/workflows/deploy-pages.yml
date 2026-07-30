@@ -32,8 +32,10 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build static site
-        run: pnpm build
+      - name: Build management admin and mobile H5
+        run: |
+          pnpm build
+          node node_modules/vite/bin/vite.js build apps/h5 --base ./ --outDir ../../dist/mobile
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site artifact

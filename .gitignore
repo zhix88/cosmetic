@@ -20,3 +20,4 @@ resources/
 start-workbench.ps1
 启动工作台.cmd
 使用说明.txt
+scripts/start-h5-preview.vbs

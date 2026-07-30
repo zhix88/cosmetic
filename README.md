@@ -1,89 +1,98 @@
-# 医美运营管理平台（静态演示版）
+# 医美运营管理平台
 
-基于 Vue 3 + Vite 构建的纯前端医美门店运营管理演示站。系统以顾客业务为主线，展示邀约、到店、分诊、服务、回访及经营分析等核心运营场景。
+面向医美门店业务协同的本地演示项目，包含管理后台与一线员工移动端两套体验。所有数据均为浏览器本机演示数据，请勿录入真实顾客信息。
 
-**在线演示：** https://zhix88.github.io/cosmetic/
+## 演示地址
 
-> GitHub Pages 会在每次推送 `main` 分支后自动构建并更新演示站。
+| 端 | 地址 | 适用场景 |
+| --- | --- | --- |
+| 管理后台 | [https://zhix88.github.io/cosmetic/](https://zhix88.github.io/cosmetic/) | 门店运营、顾客与预约管理、业务调度、经营分析与运营配置演示 |
+| 移动端个人待办 | [https://zhix88.github.io/cosmetic/mobile/](https://zhix88.github.io/cosmetic/mobile/) | 一线员工查看个人任务、处理当前节点、查看顾客档案与新增回访记录 |
 
-## 产品能力
+> GitHub Pages 会在推送 `main` 分支后自动构建并更新两套演示站。
 
-- **产品门户**：展示核心能力、标准服务闭环与角色协同方式，并可直接进入后台演示。
-- **业务工作台**：按角色汇聚待办、顾客进度、节点完成情况和异常提醒，支持流程推进。
-- **顾客与预约管理**：维护顾客档案、服务偏好、项目资产与预约日历；支持本地 Excel 导入导出。
-- **经营分析**：提供业务进度、转化漏斗、经营趋势、消费结构、日报和成交分析。
-- **运营配置**：覆盖组织、门店、员工、项目、库存、权限与业务规则等演示配置。
+## 管理后台
+
+管理后台基于 Vue 3 + Vite 构建，展示医美门店从邀约、到店、分诊、服务到回访的全流程运营协同。
+
+- 产品门户与业务工作台
+- 顾客、预约、项目资产与服务流程管理
+- 角色协同、流程推进、异常提醒与本地数据保存
+- Excel 本地导入导出、经营分析和运营配置
+
+## 移动端个人待办
+
+移动端为独立 H5 演示，专为一线员工个人执行闭环设计。
+
+- 账号与密码演示登录，按账号展示和处理本人任务
+- 工作台任务列表、日期/状态/项目筛选及关键词搜索
+- 任务详情、场控排诊、到店确认、医生排诊、服务执行和顾客回访
+- 顾客档案、项目资产、服务影像与回访历史
+- 基础资料和项目资产只读，仅允许新增回访记录
+- 不包含余额、套餐、耗材、库存或业绩扣减功能
+
+移动端 H5 本地预览：`http://127.0.0.1:4174/`。项目提供 `scripts/start-h5-preview.ps1` 作为本地预览守护启动脚本。
 
 ## 技术栈
 
-- Vue 3
-- Vite 5
-- Element Plus
-- ECharts
-- SheetJS（Excel 本地导入导出）
+- 管理后台：Vue 3、Vite 5、Element Plus、ECharts、SheetJS
+- 移动端：原生 H5、Vite 静态构建、localStorage 演示数据
+- 发布：GitHub Pages
 
 ## 本地运行
 
-建议使用 Node.js 20 LTS 与 pnpm 11。
+建议使用 Node.js 20 LTS 及 pnpm 11。
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-启动后访问终端显示的本地地址，默认是 `http://127.0.0.1:5173`。
+管理后台默认访问 `http://127.0.0.1:5173`。
 
-## 生产构建
+移动端预览可在单独终端启动：
+
+```bash
+node node_modules/vite/bin/vite.js apps/h5 --host 127.0.0.1 --port 4174
+```
+
+## 构建与发布
 
 ```bash
 pnpm build
+node node_modules/vite/bin/vite.js build apps/h5 --base ./ --outDir ../../dist/mobile
 ```
 
-构建文件输出至 `dist/`。项目默认采用相对静态资源路径，支持部署到域名根目录或二级目录。
+构建后：
 
-若需指定二级部署路径：
+- `dist/`：管理后台静态文件
+- `dist/mobile/`：移动端 H5 静态文件
 
-```powershell
-$env:VITE_BASE_PATH = '/medical-demo/'
-pnpm build
-```
+GitHub Actions 会将上述内容发布到同一个 Pages 站点，分别对应根路径与 `/mobile/` 路径。
 
 ## 数据与演示边界
 
-- 系统不连接后端服务、数据库或真实登录体系。
-- 所有演示操作数据仅保存于当前浏览器的 `localStorage`，刷新页面后仍会保留。
+- 不接入真实后端、数据库或真实微信授权登录。
+- 演示操作仅保存于当前浏览器的 `localStorage`。
 - 使用“重置演示数据”可恢复初始样例。
-- Excel 导入、导出与报表计算均在浏览器本地执行，请勿导入真实客户资料。
-
-## 部署
-
-将 `dist/` 内容上传至 Web 服务器站点目录即可。Nginx 部署、HTTPS、缓存、发布与回滚说明详见：
-
-- [部署说明](DEPLOYMENT.md)
-- [Nginx 配置示例](deploy/nginx.conf.example)
-
-Nginx 单页应用兜底配置：
-
-```nginx
-location / {
-    try_files $uri $uri/ /index.html;
-}
-```
+- 请勿导入、录入、泄露或用于其他用途的真实顾客信息。
 
 ## 项目结构
 
 ```text
-src/                    Vue 页面、组件和样式
+src/                    管理后台 Vue 页面、组件与样式
+apps/h5/                移动端个人待办 H5
+apps/mini/              uni-app 微信小程序原型
+scripts/                本地移动端预览启动脚本
+.github/workflows/      GitHub Pages 自动发布工作流
 deploy/                 Nginx 部署配置示例
-DEPLOYMENT.md           服务器部署与验收说明
-vite.config.js          Vite 静态发布配置
 ```
 
 ## 验证
 
 ```bash
-pnpm install --frozen-lockfile
 pnpm build
+node node_modules/vite/bin/vite.js build apps/h5 --base ./ --outDir ../../dist/mobile
 ```
 
-验证重点包括：产品门户访问、模块导航、角色切换、业务流程推进、本地数据保存、Excel 导入导出及静态资源加载。
+验证重点：管理后台静态构建、移动端 H5 构建、个人任务权限、节点推进、本地数据持久化及静态资源加载。

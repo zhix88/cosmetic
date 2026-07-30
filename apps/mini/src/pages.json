@@ -1,0 +1,28 @@
+{
+  "pages": [
+    { "path": "pages/login/index", "style": { "navigationBar": { "style": "custom" } } },
+    { "path": "pages/workbench/index", "style": { "navigationBar": { "style": "default", "titleText": "\u6211\u7684\u5de5\u4f5c\u53f0" } } },
+    { "path": "pages/customers/index", "style": { "navigationBar": { "style": "default", "titleText": "\u6211\u7684\u987e\u5ba2" } } },
+    { "path": "pages/mine/index", "style": { "navigationBar": { "style": "default", "titleText": "\u6211\u7684" } } },
+    { "path": "pages/task-detail/index", "style": { "navigationBar": { "style": "default", "titleText": "\u4e1a\u52a1\u8be6\u60c5" } } },
+    { "path": "pages/customer-detail/index", "style": { "navigationBar": { "style": "default", "titleText": "\u987e\u5ba2\u6863\u6848" } } }
+  ],
+  "tabBar": {
+    "color": "#7B8494",
+    "selectedColor": "#2167E8",
+    "backgroundColor": "#FFFFFF",
+    "list": [
+      { "pagePath": "pages/workbench/index", "text": "\u5de5\u4f5c\u53f0" },
+      { "pagePath": "pages/customers/index", "text": "\u987e\u5ba2\u6863\u6848" },
+      { "pagePath": "pages/mine/index", "text": "\u6211\u7684" }
+    ]
+  },
+  "globalStyle": {
+    "navigationBar": {
+      "style": "default",
+      "backgroundColor": "#FFFFFF",
+      "titleTextColor": "black",
+      "titleText": "\u533b\u7f8e\u670d\u52a1\u52a9\u624b"
+    }
+  }
+}
