@@ -109,6 +109,38 @@ function ensureMineTheme() {
   style.textContent = mineTheme
   if (!style.parentNode) document.head.appendChild(style)
 }
+const nodeActionTheme = `
+  .node-action-page{min-height:100vh;padding:0 16px 118px;background:radial-gradient(circle at 100% 7%,rgba(205,226,255,.86),transparent 27%),linear-gradient(145deg,#fbfdff,#f2f7fe);color:#102a5b}
+  .node-action-head{display:grid;grid-template-columns:42px 1fr 42px;align-items:center;height:76px;margin:0 -16px 16px;padding:0 16px;border-bottom:1px solid #e2eaf5;background:rgba(255,255,255,.78)}.node-action-head h1{margin:0;color:#102a5b;text-align:center;font-size:24px;letter-spacing:1px}.node-action-head button{border:0;background:transparent;color:#102a5b;font-size:42px;font-weight:300;line-height:1}
+  .node-customer-strip{display:flex;align-items:center;gap:11px;min-height:78px;margin:0 0 24px;padding:14px 16px;border:1px solid #d7e7fb;border-radius:17px;background:linear-gradient(100deg,#fff,#f2f8ff);box-shadow:0 8px 18px rgba(40,83,145,.05);color:#173365}.node-customer-avatar{display:grid;place-items:center;width:46px;height:46px;flex:0 0 46px;border-radius:50%;background:linear-gradient(145deg,#b7d7ff,#3b8af1);color:#fff;font-size:21px;font-weight:800}.node-customer-strip b{font-size:17px;white-space:nowrap}.node-customer-strip span{color:#415a86;font-size:14px;white-space:nowrap}.node-customer-strip .node-customer-meta{overflow:hidden;text-overflow:ellipsis}
+  .node-action-card{overflow:hidden;padding:4px 16px 18px;border:1px solid #e5ebf3;border-radius:22px;background:rgba(255,255,255,.96);box-shadow:0 12px 26px rgba(45,76,120,.08)}.node-field{display:grid;grid-template-columns:132px minmax(0,1fr);align-items:center;gap:10px;min-height:68px;border-bottom:1px solid #e8edf4;color:#142e61;font-size:16px;font-weight:650}.node-field.is-textarea{display:block;padding:18px 0 16px}.node-field>span.required::before{content:"*";margin-right:5px;color:#f15b57}.node-field select,.node-field input{width:100%;height:46px;padding:0 13px;border:1px solid #dbe4ef;border-radius:12px;background:#fbfdff;color:#162f60;font:inherit;outline:0}.node-field select{appearance:auto}.node-field input:disabled{color:#66758f;background:#f4f7fb}.node-field textarea{width:100%;min-height:150px;margin-top:13px;padding:14px;border:1px solid #dbe4ef;border-radius:13px;background:#fbfdff;color:#162f60;font:14px/1.65 inherit;resize:vertical;outline:0}.node-field textarea::placeholder{color:#9ba9bc}.node-projects{margin:0;padding:18px 0 0;border:0}.node-projects legend{padding:0;color:#142e61;font-size:16px;font-weight:650}.node-projects .project-picker{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px;padding:11px;border:1px solid #dbe4ef;border-radius:13px;background:#fbfdff}.node-projects .check{display:inline-flex!important;grid-template-columns:none!important;align-items:center;margin:0!important;padding:7px 10px;border-radius:16px;background:#eaf3ff;color:#176df0;font-size:14px;font-weight:500!important}.node-projects .check input{width:auto!important;height:auto!important;margin:0 6px 0 0}.node-action-warning{display:flex;align-items:center;gap:10px;margin:22px 2px 0;padding:13px 15px;border-radius:13px;background:linear-gradient(100deg,#fff7e8,#fffaf3);color:#d48518;font-size:13px;line-height:1.5}.node-action-warning b{display:grid;place-items:center;width:24px;height:24px;flex:0 0 24px;border-radius:50%;background:#f1aa38;color:#fff}.node-submit-bar{position:fixed;z-index:8;bottom:0;left:50%;width:min(480px,100%);padding:12px 16px 16px;background:rgba(255,255,255,.95);box-shadow:0 -8px 24px rgba(38,68,115,.08);transform:translateX(-50%)}.node-submit-bar button{width:100%;height:56px;border:0;border-radius:13px;background:linear-gradient(100deg,#0863ec,#2b7bff);box-shadow:0 10px 18px rgba(18,103,238,.23);color:#fff;font-size:17px;font-weight:700}
+  @media(max-width:350px){.node-action-page{padding-left:12px;padding-right:12px}.node-action-head{margin-left:-12px;margin-right:-12px}.node-action-head h1{font-size:21px}.node-customer-strip{gap:8px;padding:12px}.node-customer-strip b{font-size:16px}.node-customer-strip span{font-size:12px}.node-field{grid-template-columns:110px minmax(0,1fr);font-size:14px}.node-projects legend{font-size:14px}}
+`
+function ensureNodeActionTheme() {
+  const style = document.querySelector('#node-action-theme') || document.createElement('style')
+  style.id = 'node-action-theme'
+  style.textContent = nodeActionTheme
+  if (!style.parentNode) document.head.appendChild(style)
+}
+const typographyTheme = `
+  :root{--font-caption:12px;--font-label:12px;--font-body:14px;--font-card-title:17px;--font-section-title:20px;--font-page-title:24px;--font-number:24px}
+  body{font-size:var(--font-body);line-height:1.5}
+  .login h1{font-size:clamp(30px,9.2vw,40px)}.login-hero p{font-size:16px}.login-sheet h2{font-size:18px}.login-sheet>p,.login-form label,.privacy{font-size:var(--font-caption)}.login-form button{font-size:15px}
+  .wb-notice,.wb-notice b{font-size:var(--font-caption)}.wb-greeting h1{font-size:28px}.wb-greeting p{font-size:var(--font-body)}.wb-pending b{font-size:22px}.wb-pending span{font-size:var(--font-caption)}.wb-search input{font-size:var(--font-body)}.wb-filters button{font-size:13px}.wb-avatar{font-size:22px}.wb-person b{font-size:var(--font-card-title)}.wb-person span,.wb-stage{font-size:var(--font-caption)}.wb-time{font-size:var(--font-number)}.wb-project{font-size:15px}.wb-project i{font-size:14px}.wb-progress-head{font-size:13px}.wb-progress-head b{font-size:18px}.tabbar button{font-size:var(--font-caption)}
+  .task-detail-head h1,.archive-detail-head h1,.followup-form-head h1{font-size:22px}.task-detail-head .detail-stage{font-size:15px}.detail-order-card p{font-size:14px}.detail-order-card h2{font-size:22px}.detail-panel h2,.archive-detail-section h2{font-size:var(--font-section-title)}.detail-panel h2::before,.archive-detail-section h2::before{font-size:16px}.vip-tags span{font-size:var(--font-caption)}.vip-card b{font-size:20px}.vip-card small{font-size:14px}.detail-business-grid small,.detail-timeline time,.detail-timeline span,.staff-card small,.staff-card b{font-size:var(--font-caption)}.detail-business-grid b,.detail-timeline b{font-size:14px}.detail-action-bar button,.archive-followup-action button{font-size:16px}
+  .task-filter-head h1{font-size:var(--font-section-title)}.filter-section h2{font-size:16px}.filter-options button,.filter-date-input{font-size:var(--font-body)}.filter-tip{font-size:var(--font-caption)}.filter-action-bar button{font-size:15px}
+  .customer-page-head h1,.mine-head h1{font-size:28px}.customer-page-head p{font-size:var(--font-body)}.customer-search-box input{font-size:var(--font-body)}.archive-person b{font-size:var(--font-card-title)}.archive-person small,.archive-status,.archive-privacy{font-size:var(--font-caption)}.archive-status i{font-size:15px}
+  .archive-readonly-top{font-size:var(--font-caption)}.archive-profile-card h2{font-size:22px}.archive-profile-card p{font-size:15px}.member-tag{font-size:13px}.archive-detail-section h2 small,.readonly-note,.asset-row small,.archive-stat small,.followup-record span,.followup-record small{font-size:var(--font-caption)}.archive-fields dt,.archive-fields dd{font-size:14px}.asset-row b,.archive-stat b{font-size:16px}.archive-followup-action button::before{font-size:21px}
+  .followup-customer-strip b{font-size:var(--font-card-title)}.followup-customer-strip span{font-size:14px}.followup-lock{font-size:13px}.followup-card label{font-size:15px}.followup-card textarea{font-size:var(--font-body)}.followup-note-count,.followup-demo-warning{font-size:var(--font-caption)}.followup-save-bar button{font-size:16px}
+  .mine-profile-top h2{font-size:22px}.mine-profile-top p{font-size:15px}.mine-stat b{font-size:32px}.mine-stat small{font-size:14px}.mine-settings-title{font-size:var(--font-section-title)}.mine-setting-row span{font-size:16px}.mine-safety{font-size:13px}
+  @media(max-width:350px){body{font-size:13px}.login h1{font-size:29px}.wb-greeting h1,.customer-page-head h1,.mine-head h1{font-size:25px}.wb-person b,.archive-person b{font-size:16px}.wb-time{font-size:22px}.detail-order-card h2,.archive-profile-card h2,.mine-profile-top h2{font-size:20px}.detail-panel h2,.archive-detail-section h2,.mine-settings-title{font-size:18px}.followup-card label{grid-template-columns:112px minmax(0,1fr);font-size:14px}.mine-setting-row span{font-size:15px}}
+`
+function ensureTypographyTheme() {
+  const style = document.querySelector('#mobile-typography-theme') || document.createElement('style')
+  style.id = 'mobile-typography-theme'
+  style.textContent = typographyTheme
+  document.head.appendChild(style)
+}
 const stageMeta = {
   floorControl: ['场控排诊', 'orange'], arrivalConfirmation: ['确认到店', 'blue'], doctorDiagnosis: ['医生排诊', 'blue'], service: ['服务执行', 'purple'], followup: ['顾客回访', 'green'], completed: ['服务完成', 'gray'], cancelled: ['已取消', 'red']
 }
@@ -150,11 +182,14 @@ function go(next, id = selectedId) { view = next; selectedId = id; render() }
 function render() {
   if (!user) return login()
   const pages = { home, taskList, taskFilters, taskDetail, nodeAction, customers, customerDetail, mine }
-  app.innerHTML = pages[view]()
+  const page = pages[view]()
+  ensureTypographyTheme()
+  app.innerHTML = page
   bind()
 }
 function login() {
   ensureLoginTheme()
+  ensureTypographyTheme()
   const selected = employees[loginChoice]
   app.innerHTML = `<main class="login"><div class="login-hero"><div class="brand">美</div><h1>医美服务助手</h1><p>个人待办演示版</p></div><section class="login-sheet"><h2>请选择账号登录</h2><p>选择演示账号后，密码将自动填入</p><form id="login-form" class="login-form"><label>账号<select id="account-select" name="account" autocomplete="username">${employees.map((item, index) => `<option value="${item.account}" ${index===loginChoice?'selected':''}>${item.name}</option>`).join('')}</select></label><label>密码<input name="password" type="password" value="${selected.password}" autocomplete="current-password"></label>${loginError ? `<p class="login-error">${loginError}</p>` : ''}<button type="submit">登录</button></form><p class="demo-password">演示账号统一密码：123456</p></section><small class="privacy">演示数据，请勿录入真实顾客信息</small></main>`
   document.querySelector('#account-select').onchange = event => { loginChoice = employees.findIndex(item => item.account === event.target.value); loginError = ''; login() }
@@ -210,13 +245,46 @@ function archiveFollowupForm(item) {
 }
 function nodeAction() {
   const item = current(); if (!item) return home(); if (actionMode === 'archiveFollowup') return archiveFollowupForm(item)
-  const title = `处理${meta(item.status)[0]}`; let fields = ''
-  if (actionMode === 'archiveFollowup' || item.status === 'followup') fields = `<label>回访方式<select name="method"><option>电话</option><option>微信</option><option>短信</option></select></label><label>回访结果<select name="result"><option>已回访</option><option>待继续跟进</option><option>未接通</option></select></label><label>满意度<select name="satisfaction"><option>满意</option><option>一般</option><option>需改善</option></select></label><label>下次回访日期<input name="nextDate" type="date"></label><label>回访备注<textarea name="note" required placeholder="填写回访情况与后续安排"></textarea></label>`
-  else if (item.status === 'floorControl') fields = `<label>管家<select name="butler"><option>安然</option></select></label><label>咨询<select name="consultant"><option value="">待分配</option><option>吴咨询</option></select></label><label>总监<select name="director"><option>林珊</option></select></label><label>经理<select name="manager" required><option>韩经理</option></select></label><label>经理建议项目<input name="project" value="${item.project}" required></label><label>场控排诊备注<textarea name="note" required placeholder="填写排诊说明"></textarea></label><fieldset><legend>顾客涉及项目</legend>${projects.map(project=>`<label class="check"><input type="checkbox" name="projects" value="${project}" ${item.projects.includes(project)?'checked':''}>${project}</label>`).join('')}</fieldset>`
-  else if (item.status === 'arrivalConfirmation') fields = `<label>到店结果<select name="result"><option>已到店</option><option>未到店</option><option>申请改期</option></select></label><label>实际到店时间<input name="time" type="time" value="${item.time}"></label><label>到店确认备注<textarea name="note" placeholder="填写确认说明"></textarea></label>`
-  else if (item.status === 'doctorDiagnosis') fields = `<label>医生<input value="${user.name}" disabled></label><label>配台护理<select name="nurse"><option>王护理</option></select></label><label>项目科室<input name="department" value="${item.department}"></label><label>排诊备注<textarea name="note" required placeholder="填写排诊安排"></textarea></label>`
-  else fields = `<label>服务结果<select name="result"><option>服务已结束</option><option>需继续服务</option></select></label><label>服务项目<input name="project" value="${item.project}"></label><label>回访日期<input name="followupDate" type="date"></label><label>服务小结<textarea name="note" required placeholder="填写服务小结"></textarea></label><p class="form-note">移动端不处理余额、套餐、耗材及业绩扣减。</p>`
-  return shell(`<header class="sub-head"><button data-back>‹</button><h1>${title}</h1><span></span></header><form id="node-form" class="content form-page">${fields}<button class="primary" type="submit">${actionMode === 'archiveFollowup' ? '保存回访记录' : item.status === 'floorControl' ? '完成排诊，等待顾客到店' : '确认并推进流程'}</button></form>`, 'home') }
+  ensureNodeActionTheme()
+  const field = (label, control, required = false, textarea = false) => `<label class="node-field ${textarea ? 'is-textarea' : ''}"><span class="${required ? 'required' : ''}">${label}</span>${control}</label>`
+  const textarea = (name, placeholder, required = true) => `<textarea name="${name}" maxlength="200" ${required ? 'required' : ''} placeholder="${placeholder}"></textarea>`
+  const titles = { floorControl: '场控排诊', arrivalConfirmation: '确认到店', doctorDiagnosis: '医生排诊', service: '服务执行', followup: '顾客回访' }
+  const submitLabels = { floorControl: '完成排诊，等待顾客到店', arrivalConfirmation: '确认到店并推进流程', doctorDiagnosis: '完成医生排诊', service: '确认服务结果', followup: '保存回访记录' }
+  const title = titles[item.status] || `处理${meta(item.status)[0]}`; let fields = ''
+  if (item.status === 'followup') fields = [
+    field('回访方式', '<select name="method"><option>电话</option><option>微信</option><option>短信</option></select>', true),
+    field('回访结果', '<select name="result"><option>已回访</option><option>待继续跟进</option><option>未接通</option></select>', true),
+    field('满意度', '<select name="satisfaction"><option>满意</option><option>一般</option><option>需改善</option></select>', true),
+    field('下次回访日期', '<input name="nextDate" type="date" required>', true),
+    field('回访备注', textarea('note', '请填写治疗效果、客户反馈、护理建议或后续需求'), true, true)
+  ].join('')
+  else if (item.status === 'floorControl') fields = [
+    field('管家', '<select name="butler"><option>安然</option></select>'),
+    field('咨询', '<select name="consultant"><option value="">待分配</option><option>吴咨询</option></select>'),
+    field('总监', '<select name="director"><option>林珊</option></select>'),
+    field('经理', '<select name="manager" required><option>韩经理</option></select>', true),
+    field('经理建议项目', `<input name="project" value="${item.project}" required>`, true),
+    field('场控排诊备注', textarea('note', '请填写排诊说明与顾客注意事项'), true, true),
+    `<fieldset class="node-projects"><legend>顾客涉及项目</legend><div class="project-picker">${projects.map(project => `<label class="check"><input type="checkbox" name="projects" value="${project}" ${item.projects.includes(project) ? 'checked' : ''}>${project}</label>`).join('')}</div></fieldset>`
+  ].join('')
+  else if (item.status === 'arrivalConfirmation') fields = [
+    field('到店结果', '<select name="result"><option>已到店</option><option>未到店</option><option>申请改期</option></select>', true),
+    field('实际到店时间', `<input name="time" type="time" value="${item.time}">`),
+    field('到店确认备注', textarea('note', '请填写到店、未到店或改期原因', false), false, true)
+  ].join('')
+  else if (item.status === 'doctorDiagnosis') fields = [
+    field('医生', `<input value="${user.name}" disabled>`),
+    field('配台护理', '<select name="nurse"><option>王护理</option></select>', true),
+    field('项目科室', `<input name="department" value="${item.department}">`),
+    field('医生排诊备注', textarea('note', '请填写排诊安排与服务注意事项'), true, true)
+  ].join('')
+  else fields = [
+    field('服务结果', '<select name="result"><option>服务已结束</option><option>需继续服务</option></select>', true),
+    field('服务项目', `<input name="project" value="${item.project}">`, true),
+    field('回访日期', '<input name="followupDate" type="date">'),
+    field('服务小结', textarea('note', '请填写服务结果、顾客反馈与后续安排'), true, true)
+  ].join('')
+  return shell(`<section class="node-action-page"><header class="node-action-head"><button data-back>‹</button><h1>${title}</h1><span></span></header><section class="node-customer-strip"><b class="node-customer-avatar">${item.name.slice(0,1)}</b><b>${item.name}</b><span>${item.time}</span><span>${item.type}</span><span class="node-customer-meta">${item.project}</span></section><form id="node-form" class="node-action-card">${fields}</form><aside class="node-action-warning"><b>!</b><span>当前为演示数据，非真实顾客信息，请勿用于真实场景。</span></aside></section><footer class="node-submit-bar"><button form="node-form" type="submit">${submitLabels[item.status] || '确认并推进流程'}</button></footer>`, 'home', false) }
 function customers() {
   ensureCustomerTheme()
   const recordsByRecent = visibleRecords().slice().sort((a, b) => `${b.businessDate}${b.time}`.localeCompare(`${a.businessDate}${a.time}`))
