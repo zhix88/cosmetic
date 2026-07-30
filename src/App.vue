@@ -4,7 +4,7 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
-        <span class="brand-mark">澜</span>
+        <span class="brand-mark">美</span>
         <div>
           <strong>医美管理后台</strong>
           <small>顾客全流程协作</small>
