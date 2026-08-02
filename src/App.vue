@@ -12,9 +12,9 @@
       </div>
 
       <nav class="nav-list">
-        <button class="nav-item" :class="{ active: activePage === 'workbench' }" @click="activePage = 'workbench'"><el-icon><Monitor /></el-icon>工作台</button>
-        <button class="nav-item" :class="{ active: activePage === 'customers' }" @click="activePage = 'customers'"><el-icon><User /></el-icon>顾客档案</button>
-        <button class="nav-item" :class="{ active: activePage === 'appointments' }" @click="activePage = 'appointments'"><el-icon><Calendar /></el-icon>预约记录</button>
+        <button v-if="canView('workbench')" class="nav-item" :class="{ active: activePage === 'workbench' }" @click="activePage = 'workbench'"><el-icon><Monitor /></el-icon>工作台</button>
+        <button v-if="canView('customers')" class="nav-item" :class="{ active: activePage === 'customers' }" @click="activePage = 'customers'"><el-icon><User /></el-icon>顾客档案</button>
+        <button v-if="canView('appointments')" class="nav-item" :class="{ active: activePage === 'appointments' }" @click="activePage = 'appointments'"><el-icon><Calendar /></el-icon>预约记录</button>
         <button
           v-if="canViewDashboard"
           class="nav-item"
@@ -284,6 +284,7 @@
         :role-meta="currentRoleMeta"
         :stores="stores"
         :staff-options="employees"
+        :permissions="currentRoleDefinition?.permissions || {}"
         :project-catalog="projectCatalog"
         :focus-phone="customerFocus.phone"
         :focus-request="customerFocus.request"
@@ -296,6 +297,7 @@
         :role-meta="currentRoleMeta"
         :stores="stores"
         :staff-options="employees"
+        :permissions="currentRoleDefinition?.permissions || {}"
         :project-catalog="projectCatalog"
         @open-record="openDetail"
         @open-import="batchImportVisible=true"
@@ -550,6 +552,10 @@
             <el-form-item label="管家"><el-select v-model="commonForm.butler" clearable><el-option v-for="employee in staffOptions('butler')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
             <el-form-item label="经理"><el-select v-model="commonForm.manager" clearable><el-option v-for="employee in staffOptions('manager')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
             <el-form-item label="总监"><el-select v-model="commonForm.director" clearable><el-option v-for="employee in staffOptions('director')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
+            <el-form-item label="场控"><el-select v-model="commonForm.floorControl" clearable><el-option v-for="employee in staffOptions('floorControl')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
+            <el-form-item label="咨询"><el-select v-model="commonForm.consultant" clearable><el-option v-for="employee in staffOptions('consultant')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
+            <el-form-item label="医生"><el-select v-model="commonForm.doctor" clearable><el-option v-for="employee in staffOptions('doctor')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
+            <el-form-item label="护士"><el-select v-model="commonForm.nurse" clearable><el-option v-for="employee in staffOptions('nurse')" :key="employee.code" :label="employee.name" :value="employee.name" /></el-select></el-form-item>
           </div>
         </template>
         <template v-else>
@@ -637,6 +643,7 @@
       :role="currentRole"
       :role-meta="currentRoleMeta"
       :stores="stores"
+      :permissions="currentRoleDefinition?.permissions || {}"
       @imported="handleBatchImported"
     />
   </div>
@@ -661,6 +668,7 @@ import BatchAppointmentImport from './BatchAppointmentImport.vue'
 import LoginView from './LoginView.vue'
 
 const STORAGE_KEY = 'cosmetic-workbench-v2'
+const SHARED_WORKBENCH_API = '/api/shared-workbench'
 const today = new Date().toISOString().slice(0, 10)
 const CONFIG_KEY = 'cosmetic-system-config-v1'
 const GUIDE_KEY = 'cosmetic-guide-seen-v1'
@@ -691,11 +699,29 @@ const projectCatalog = reactive(savedConfig?.projectCatalog || [
 const allProjects = computed(() => projectCatalog.flatMap((group) => group.options))
 const workflowLegend = ['批量导入', '场控排诊', '确认到店', '医生排诊', '服务执行', '顾客回访']
 
-const defaultEmployees = [
-  ['E0001','苏晴','科臻澳总店','市场','market'],['E0002','顾妍','科臻澳总店','客服','service'],['E0003','安然','科臻澳总店','管家','butler'],['E0004','林珊','科臻澳总店','总监','director'],['E0005','周店长','科臻澳总店','店长','storeManager'],['E0009','叶老师','科臻澳总店','卡姐','cardConsultant'],['E0010','乔老师','科臻澳总店','美导','beautyConsultant'],['E0011','韩经理','科臻澳总店','经理','manager'],['E0012','陈场控','科臻澳总店','场控','floorControl'],['E0013','吴咨询','科臻澳总店','咨询','consultant'],['E0014','李医生','科臻澳总店','医生','doctor'],['E0015','赵护士','科臻澳总店','护士','nurse'],['admin','admin','总部','admin','admin']
-].map(([code,name,store,roleLabel,roleKey])=>({code,name,store,roleLabel,roleKey,status:'active',label:roleLabel}))
+const demoStaffRoster = [
+  ['10001', '王晓歌', '科臻澳总店', '院长', 'storeManager'],
+  ['10002', '娜娜', '科臻澳总店', '场控', 'floorControl'],
+  ['10003', '张璐', '科臻澳总店', '护士长', 'headNurse'],
+  ['10004', '洋洋', '科臻澳总店', '护士长', 'headNurse'],
+  ['10005', '舒婷', '科臻澳总店', '售后', 'aftersales'],
+  ['10006', '小洁', '科臻澳总店', '财务', 'finance'],
+  ['admin', 'admin', '总部', 'admin', 'admin']
+]
+const virtualStaffRoster = [
+  ['10007', '虚拟市场专员', '科臻澳总店', '市场', 'market'],
+  ['10008', '小卡', '科臻澳总店', '卡姐', 'cardConsultant'],
+  ['10009', '小美', '科臻澳总店', '美导', 'beautyConsultant'],
+  ['10010', '小咨', '科臻澳总店', '咨询', 'consultant'],
+  ['10011', '林悦', '科臻澳总店', '管家', 'butler'],
+  ['10012', '赵阳', '科臻澳总店', '经理', 'manager'],
+  ['10013', '陈楠', '科臻澳总店', '总监', 'director'],
+  ['10014', '小医', '科臻澳总店', '医生', 'doctor']
+]
+const allDemoStaffRoster = [...demoStaffRoster, ...virtualStaffRoster]
+const defaultEmployees = allDemoStaffRoster.map(([code,name,store,roleLabel,roleKey])=>({code,name,store,roleLabel,roleKey,status:'active',label:roleLabel}))
 const defaultRoles = [
-  ['market','市场','本人'],['service','客服','本人'],['butler','管家','本人'],['cardConsultant','卡姐','本人'],['beautyConsultant','美导','本人'],['manager','经理','本人'],['floorControl','场控','本店'],['consultant','咨询','本人'],['director','总监','本店'],['doctor','医生','本人'],['nurse','护士','本人'],['storeManager','店长','本店'],['admin','admin','全部门店']
+  ['market','市场','本人'],['service','客服','本人'],['butler','管家','本人'],['cardConsultant','卡姐','本人'],['beautyConsultant','美导','本人'],['manager','经理','本人'],['floorControl','场控','本店'],['headNurse','护士长','本店'],['finance','财务','本店'],['aftersales','售后','本人'],['consultant','咨询','本人'],['director','总监','本店'],['doctor','医生','本人'],['nurse','护士','本人'],['storeManager','院长','本店'],['admin','admin','全部门店']
 ].map(([key,label,dataScope])=>({key,label,dataScope,permissions:{workbench:['view','edit'],customers:['view'],appointments:['view'],dashboard:['view','export'],dailyReports:['view','export'],dealReports:['view','export'],...(key==='storeManager'?{settings:['view','edit']}:{}),...(key==='admin'?{settings:['view','edit']}: {})}}))
 const savedSettings = readLocalJson(SETTINGS_KEY)
 const employees = ref(ensureAdminEmployee(savedSettings?.staff || defaultEmployees))
@@ -942,9 +968,18 @@ function createNodeTimes(date, status, seed) {
 const historicalRecords = createHistoricalRecords().map(normalizeRecord)
 
 const savedRecords = readLocalJson(STORAGE_KEY, initialRecords())
-const records = ref(ensureAppointmentSamples((Array.isArray(savedRecords) ? savedRecords : initialRecords()).map(normalizeRecord)))
+const records = ref(ensureAppointmentSamples((Array.isArray(savedRecords) ? savedRecords : initialRecords()).map(normalizeRecord)).map(normalizeRecord))
+localStorage.setItem(STORAGE_KEY, JSON.stringify(records.value))
+let applyingSharedTaskUpdate = false
+const taskSignature = (rows) => JSON.stringify(rows.map((item) => ({ id: item.id, status: item.status, logs: item.logs?.length, followups: item.followupRecords?.length, updated: item.floorControl?.completedAt || item.arrivalConfirmation?.confirmedAt || '' })))
+let lastSharedTaskSignature = taskSignature(records.value)
 
-const currentRoleMeta = computed(() => currentUser.value ? { ...currentUser.value, label: currentUser.value.roleLabel || currentUser.value.roleKey } : { name: '未登录', label: '', roleLabel: '', store: '' })
+const currentRoleMeta = computed(() => {
+  if (!currentUser.value) return { name: '未登录', label: '', roleLabel: '', store: '', managedStores: [] }
+  const definition = roleDefinitions.value.find((item) => item.key === currentUser.value.roleKey)
+  const managedStores = definition?.dataScope === '指定门店' ? (definition.authorizedStores || []) : [currentUser.value.store]
+  return { ...currentUser.value, label: currentUser.value.roleLabel || currentUser.value.roleKey, managedStores: managedStores.filter(Boolean) }
+})
 const pageHeader = computed(() => ({
   workbench: { title: '顾客业务维护工作台', subtitle: '按角色处理本人任务，全店进度实时可见' },
   dashboard: { title: '门店经营数据看板', subtitle: '按周期洞察门店业务转化与经营质量' },
@@ -955,7 +990,12 @@ const pageHeader = computed(() => ({
   ,settings: { title: '系统设置', subtitle: '统一维护组织、人员、项目、权限与耗材库存' }
 }[activePage.value] || { title: '医美管理后台', subtitle: '顾客全流程协作' }))
 const currentRoleDefinition = computed(() => roleDefinitions.value.find((item) => item.key === currentRole.value))
-const canView = (module) => currentRole.value === 'admin' || (currentRoleDefinition.value?.permissions?.[module] || []).includes('view')
+const canView = (module) => {
+  if (currentRole.value === 'admin') return true
+  const permissions = currentRoleDefinition.value?.permissions || {}
+  if ((permissions[module] || []).includes('view')) return true
+  return Object.entries(permissions).some(([path, actions]) => path.startsWith(`${module}.`) && Array.isArray(actions) && actions.includes('view'))
+}
 const canViewDashboard = computed(() => canView('dashboard'))
 const canViewDailyReports = computed(() => canView('dailyReports'))
 const canViewDealReports = computed(() => canView('dealReports'))
@@ -963,11 +1003,12 @@ const canViewSettings = computed(() => ['storeManager', 'admin'].includes(curren
 const hasAllStores = computed(() => currentRole.value === 'admin' || currentRoleDefinition.value?.dataScope === '全部门店')
 function recordInScope(record) {
   if (currentRole.value === 'admin') return true
-  if (['storeManager', 'director'].includes(currentRole.value)) return record.store === currentRoleMeta.value.store
+  if (currentRoleDefinition.value?.dataScope === '指定门店') return currentRoleMeta.value.managedStores.includes(record.store)
+  if (['storeManager', 'director'].includes(currentRole.value)) return currentRoleMeta.value.managedStores.includes(record.store)
   const owner = currentRole.value === 'cardConsultant' ? record.cardConsultant : currentRole.value === 'beautyConsultant' ? record.beautyConsultant : record.assignments?.[currentRole.value]
   return owner === currentRoleMeta.value.name
 }
-const scopedRecords = computed({ get: () => records.value.filter(recordInScope), set: (value) => { records.value = value } })
+const scopedRecords = computed({ get: () => records.value.filter(recordInScope), set: (value) => { records.value = value.map(normalizeRecord) } })
 const dashboardRecords = computed(() => [...historicalRecords, ...records.value].filter(recordInScope))
 const activeRecord = computed(() => dashboardRecords.value.find((x) => x.id === activeRecordId.value))
 const dayRecords = computed(() => records.value.filter((x) => {
@@ -1019,13 +1060,21 @@ const commonDialogTitle = computed(() => ({
   revenue: '编辑消费与业绩', reschedule: '业务改期', rollback: '退回上一节点', cancel: '取消业务', staff: '设置人员归属'
 }[commonAction.value]))
 
-watch(records, (value) => localStorage.setItem(STORAGE_KEY, JSON.stringify(value)), { deep: true })
+watch(records, (value) => {
+  if (applyingSharedTaskUpdate) return
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
+  lastSharedTaskSignature = taskSignature(value)
+  void pushSharedWorkbench(value)
+}, { deep: true })
 watch(currentRole, () => {
+  if (!canView('workbench') && activePage.value === 'workbench') activePage.value = canView('customers') ? 'customers' : canView('appointments') ? 'appointments' : 'dashboard'
+  if (!canView('customers') && activePage.value === 'customers') activePage.value = canView('workbench') ? 'workbench' : 'appointments'
+  if (!canView('appointments') && activePage.value === 'appointments') activePage.value = canView('workbench') ? 'workbench' : 'customers'
   if (!canViewDashboard.value && activePage.value === 'dashboard') activePage.value = 'workbench'
   if (!canViewDailyReports.value && activePage.value === 'dailyReports') activePage.value = 'workbench'
   if (!canViewDealReports.value && activePage.value === 'dealReports') activePage.value = 'workbench'
   if (!canViewSettings.value && activePage.value === 'settings') activePage.value = 'workbench'
-  if (!hasAllStores.value) selectedStore.value = currentRoleMeta.value.store
+  if (!hasAllStores.value) selectedStore.value = currentRoleMeta.value.managedStores.length > 1 ? 'all' : currentRoleMeta.value.managedStores[0]
 })
 watch([selectedDate, selectedStore, diagnosisFilter, keyword, activeStatus, viewMode], () => { currentPage.value = 1 })
 watch([guideVisible, guideStep], async () => {
@@ -1036,8 +1085,54 @@ watch([guideVisible, guideStep], async () => {
 
 onMounted(() => {
   window.addEventListener('resize', positionGuidePointer)
+  window.addEventListener('storage', syncExternalTaskRecords)
+  void (async () => { await pushSharedWorkbench(records.value); await pullSharedWorkbench() })()
+  sharedWorkbenchTimer = window.setInterval(() => { void pullSharedWorkbench() }, 1500)
 })
-onBeforeUnmount(() => window.removeEventListener('resize', positionGuidePointer))
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', positionGuidePointer)
+  window.removeEventListener('storage', syncExternalTaskRecords)
+  window.clearInterval(sharedWorkbenchTimer)
+})
+
+let sharedWorkbenchTimer
+async function pushSharedWorkbench(rows) {
+  try {
+    await fetch(SHARED_WORKBENCH_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: rows }) })
+  } catch {
+    // The static demo remains usable without the optional local sync service.
+  }
+}
+async function pullSharedWorkbench() {
+  try {
+    const response = await fetch(SHARED_WORKBENCH_API, { cache: 'no-store' })
+    if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) return
+    const payload = await response.json()
+    if (!Array.isArray(payload.data) || !payload.data.length) return
+    const signature = taskSignature(payload.data)
+    if (signature === lastSharedTaskSignature) return
+    applyingSharedTaskUpdate = true
+    lastSharedTaskSignature = signature
+    records.value = payload.data.map(normalizeRecord)
+    await nextTick()
+    applyingSharedTaskUpdate = false
+  } catch {
+    // The local task service is unavailable in static hosting and offline previews.
+  }
+}
+
+function syncExternalTaskRecords(event) {
+  if (event.key !== STORAGE_KEY || !event.newValue) return
+  try {
+    const incoming = JSON.parse(event.newValue)
+    if (!Array.isArray(incoming)) return
+    applyingSharedTaskUpdate = true
+    records.value = incoming.map(normalizeRecord)
+    nextTick(() => { applyingSharedTaskUpdate = false })
+  } catch {
+    // Ignore malformed external demo data and retain the current workbench state.
+  }
+}
 
 function openGuide() {
   guideStep.value = 0
@@ -1048,7 +1143,8 @@ function openGuide() {
 function handleLogin(employee) {
   currentUser.value = employee
   currentRole.value = employee.roleKey
-  selectedStore.value = employee.roleKey === 'admin' ? 'all' : employee.store
+  const definition = roleDefinitions.value.find((item) => item.key === employee.roleKey)
+  selectedStore.value = employee.roleKey === 'admin' || definition?.dataScope === '指定门店' && (definition.authorizedStores || []).length > 1 ? 'all' : (definition?.dataScope === '指定门店' ? definition.authorizedStores[0] : employee.store)
   activePage.value = 'workbench'
   localStorage.setItem(AUTH_KEY, JSON.stringify({ code: employee.code }))
 }
@@ -1078,10 +1174,11 @@ function finishGuide(page = 'workbench') {
 }
 
 function handleBatchImported(imported) {
-  records.value = [...records.value, ...imported]
-  if (imported[0]) {
-    selectedDate.value = imported.map(x=>x.businessDate).sort()[0]
-    if (currentRole.value !== 'admin') selectedStore.value = currentRoleMeta.value.store
+  const migrated = imported.map(normalizeRecord)
+  records.value = [...records.value, ...migrated]
+  if (migrated[0]) {
+    selectedDate.value = migrated.map(x=>x.businessDate).sort()[0]
+    if (currentRole.value !== 'admin') selectedStore.value = currentRoleMeta.value.managedStores.length > 1 ? 'all' : currentRoleMeta.value.managedStores[0]
   }
 }
 
@@ -1101,7 +1198,7 @@ function canRollback(record) {
   return canManage(record) && Boolean(previousStatus[record.status])
 }
 
-function currentOwner(record) {
+function baseCurrentOwner(record) {
   const role = statusMeta[record.status]?.owner
   if (!role) return record.status === 'completed' ? '流程已结束' : '无'
   return record.assignments[role] || '待分配'
@@ -1126,6 +1223,22 @@ function openDetail(record) {
 }
 
 function handleConfigChange(config) {
+  const previousStaff = new Map(employees.value.map((employee) => [employee.code, employee.name]))
+  const renamedStaff = new Map((config.staff || []).filter((employee) => previousStaff.has(employee.code)).map((employee) => [previousStaff.get(employee.code), employee.name]))
+  if (renamedStaff.size) {
+    records.value = records.value.map((record) => {
+      const replace = (value) => renamedStaff.get(value) || value
+      record.cardConsultant = replace(record.cardConsultant)
+      record.beautyConsultant = replace(record.beautyConsultant)
+      record.assignments = Object.fromEntries(Object.entries(record.assignments || {}).map(([key, value]) => [key, replace(value)]))
+      if (record.doctorDiagnosis) {
+        record.doctorDiagnosis.doctor = replace(record.doctorDiagnosis.doctor)
+        record.doctorDiagnosis.nurse = replace(record.doctorDiagnosis.nurse)
+      }
+      return record
+    })
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(records.value))
+  }
   stores.splice(0, stores.length, ...config.stores)
   departments.splice(0, departments.length, ...config.departments)
   projectCatalog.splice(0, projectCatalog.length, ...config.projectCatalog)
@@ -1135,11 +1248,21 @@ function handleConfigChange(config) {
 }
 
 function ensureAdminEmployee(rows) {
-  const normalized = rows.map((row) => ({ ...row, label: row.roleLabel || row.label || row.roleKey }))
-  defaultEmployees.forEach((employee) => {
-    if (!normalized.some((row) => row.code === employee.code || row.roleKey === employee.roleKey)) normalized.push({ ...employee, department: employee.roleLabel === '卡姐' ? '客户管理部' : employee.roleLabel === '美导' ? '运营部' : employee.roleLabel === '经理' ? '管理部' : '' })
+  const source = Array.isArray(rows) ? rows : []
+  const normalized = allDemoStaffRoster.map(([code, name, store, roleLabel, roleKey], index) => {
+    const legacyCodes = [`E${String(index + 1).padStart(4, '0')}`, `V${String(index - 5).padStart(4, '0')}`]
+    const existing = source.find((row) => row.code === code || legacyCodes.includes(row.code) || row.name === name) || {}
+    const staffNameMigration = { '虚拟咨询师': '小咨', '虚拟卡姐': '小卡', '虚拟美导': '小美' }
+    const migratedName = staffNameMigration[existing.name] || existing.name
+    return { code, name: migratedName || name, store, roleLabel, roleKey, status: 'active', label: roleLabel, ...existing, name: migratedName || name, code, id: existing.id || `staff-${code}`, label: existing.label || roleLabel }
   })
   return normalized
+}
+
+function currentOwner(record) {
+  const value = baseCurrentOwner(record)
+  const employee = employees.value.find((candidate) => candidate.name === value)
+  return employee && employee.status !== 'active' ? `${value}（已停用，待重新分配）` : value
 }
 
 function projectFollowupDays(projectName) {
@@ -1160,8 +1283,10 @@ function pushMessage(record, content) {
 }
 
 function ensureReportPermissions(rows) {
-  const normalized = rows.map((role) => JSON.parse(JSON.stringify(role)))
-  defaultRoles.forEach((role) => { if (!normalized.some((item) => item.key === role.key)) normalized.push(JSON.parse(JSON.stringify(role))) })
+  const roleKeyForLabel = { 店长: 'storeManager', 院长: 'storeManager', 场控: 'floorControl', 护士长: 'headNurse', 财务: 'finance', 售后: 'aftersales' }
+  const normalized = rows.map((role) => ({ ...JSON.parse(JSON.stringify(role)), key: role.key || roleKeyForLabel[role.label] }))
+  normalized.forEach((role) => { if (role.key === 'doctor' || role.label === 'doctor') role.label = '医生' })
+  defaultRoles.forEach((role) => { if (!normalized.some((item) => item.key === role.key || item.label === role.label)) normalized.push(JSON.parse(JSON.stringify(role))) })
   return normalized.map((role) => {
     const permissions = JSON.parse(JSON.stringify(role.permissions || {}))
     ;['dashboard', 'dailyReports', 'dealReports'].forEach((key) => {
@@ -1170,7 +1295,7 @@ function ensureReportPermissions(rows) {
     })
     if (role.key === 'admin') permissions.settings = permissions.settings?.length ? permissions.settings : ['view', 'edit']
     if (role.key === 'storeManager') permissions.settings = permissions.settings?.length ? permissions.settings : ['view', 'edit']
-    return { ...role, label: role.key === 'admin' ? 'admin' : role.label, permissions }
+    return { ...role, label: role.key === 'admin' ? 'admin' : role.key === 'storeManager' ? '院长' : role.label, permissions }
   })
 }
 
@@ -1203,6 +1328,8 @@ async function submitNode() {
   if (!await nodeFormRef.value?.validate().catch(() => false)) return
   const record = records.value.find((x) => x.id === editingRecordId.value)
   if (!record) return
+  if (dialogStatus.value === 'floorControl' && !validateStaffNames([nodeForm.butler, nodeForm.consultant, nodeForm.director, nodeForm.manager])) return
+  if (dialogStatus.value === 'doctorDiagnosis' && !validateStaffNames([nodeForm.doctor, nodeForm.nurse])) return
   const from = record.status
   let to = nextStatus[from]
   if (from === 'arrivalConfirmation' && nodeForm.result !== '已到店') {
@@ -1286,7 +1413,7 @@ function openCommonDialog(action, record) {
     projects: [...(record.projects || [record.estimatedProject].filter(Boolean))],
     date: record.businessDate, time: record.appointmentTime, reason: '',
     cardConsultant: record.cardConsultant || '', beautyConsultant: record.beautyConsultant || '',
-    market: record.assignments?.market || '', service: record.assignments?.service || '', butler: record.assignments?.butler || '', manager: record.assignments?.manager || '', director: record.assignments?.director || ''
+    market: record.assignments?.market || '', service: record.assignments?.service || '', butler: record.assignments?.butler || '', manager: record.assignments?.manager || '', director: record.assignments?.director || '', floorControl: record.assignments?.floorControl || '', consultant: record.assignments?.consultant || '', doctor: record.assignments?.doctor || record.doctorDiagnosis?.doctor || '', nurse: record.assignments?.nurse || record.doctorDiagnosis?.nurse || ''
   })
   commonDialogVisible.value = true
   nextTick(() => commonFormRef.value?.clearValidate())
@@ -1297,6 +1424,7 @@ async function submitCommon() {
   const record = records.value.find((x) => x.id === editingRecordId.value)
   if (!record) return
   const from = record.status
+  if (commonAction.value === 'staff' && !validateStaffNames([commonForm.cardConsultant, commonForm.beautyConsultant, commonForm.market, commonForm.service, commonForm.butler, commonForm.manager, commonForm.director, commonForm.floorControl, commonForm.consultant, commonForm.doctor, commonForm.nurse])) return
   if (commonAction.value === 'revenue') {
     record.paymentType = commonForm.paymentType
     record.revenue = commonForm.paymentType === 'cash' ? commonForm.revenue : 0
@@ -1309,7 +1437,10 @@ async function submitCommon() {
     record.cardConsultant = commonForm.cardConsultant
     record.beautyConsultant = commonForm.beautyConsultant
     record.assignments ||= {}
-    ;['market', 'service', 'butler', 'manager', 'director'].forEach((role) => { record.assignments[role] = commonForm[role] })
+    ;['market', 'service', 'butler', 'manager', 'director', 'floorControl', 'consultant', 'doctor', 'nurse'].forEach((role) => { record.assignments[role] = commonForm[role] })
+    record.doctorDiagnosis ||= {}
+    record.doctorDiagnosis.doctor = commonForm.doctor
+    record.doctorDiagnosis.nurse = commonForm.nurse
     addLog(record, '设置人员归属', `卡姐：${record.cardConsultant || '未分配'}；美导：${record.beautyConsultant || '未分配'}；经理：${record.assignments.manager || '未分配'}`, from, from)
   }
   if (commonAction.value === 'reschedule') {
@@ -1340,14 +1471,42 @@ function addLog(record, action, detail, fromStatus, toStatus, type = 'primary') 
   })
 }
 
+function staffOptionsFromLegacy(roleKey) {
+  const aliases = { market: 'finance', service: 'aftersales', butler: 'storeManager', director: 'storeManager', manager: 'storeManager', consultant: 'aftersales', cardConsultant: 'finance', beautyConsultant: 'finance', nurse: 'headNurse' }
+  const effectiveRole = employees.value.some((employee) => employee.roleKey === roleKey) ? roleKey : aliases[roleKey]
+  const virtual = {
+    market: [{ code: 'V-MARKET', name: '虚拟市场专员' }],
+    cardConsultant: [{ code: 'V-CARD', name: '虚拟卡姐' }],
+    beautyConsultant: [{ code: 'V-BEAUTY', name: '虚拟美导' }],
+    consultant: [{ code: 'V-CONSULTANT', name: '小咨' }],
+    butler: [{ code: 'V-BUTLER', name: '林悦' }],
+    director: [{ code: 'V-DIRECTOR', name: '陈楠' }],
+    manager: [{ code: 'V-MANAGER', name: '赵阳' }],
+    doctor: [{ code: 'V-DOCTOR', name: '小医' }]
+  }
+  return [...(virtual[roleKey] || []), ...employees.value.filter((employee) => employee.status === 'active' && employee.roleKey === effectiveRole)]
+}
+
+// 员工归属只允许使用员工管理中已创建且在职的人员；保留旧函数声明兼容历史数据，但以此实现为准。
 function staffOptions(roleKey) {
-  return employees.value.filter((employee) => employee.status === 'active' && employee.roleKey === roleKey)
+  const aliases = { market: 'finance', service: 'aftersales', butler: 'storeManager', director: 'storeManager', manager: 'storeManager', consultant: 'aftersales', cardConsultant: 'finance', beautyConsultant: 'finance', nurse: 'headNurse' }
+  const effectiveRole = employees.value.some((employee) => employee.roleKey === roleKey) ? roleKey : aliases[roleKey]
+  return employees.value.filter((employee) => employee.status === 'active' && employee.roleKey === effectiveRole)
+}
+
+function validateStaffNames(names) {
+  const invalid = [...new Set(names.filter(Boolean).filter((name) => !employees.value.some((employee) => employee.name === name && employee.status === 'active')))]
+  if (invalid.length) {
+    ElMessage.warning(`人员“${invalid.join('、')}”未在员工管理中创建或已停用，请先维护员工信息`)
+    return false
+  }
+  return true
 }
 
 async function resetData() {
   try {
     await ElMessageBox.confirm('将清除当前所有演示操作并恢复初始数据，是否继续？', '重置演示数据', { type: 'warning' })
-    records.value = ensureAppointmentSamples(initialRecords().map(normalizeRecord))
+    records.value = ensureAppointmentSamples(initialRecords().map(normalizeRecord)).map(normalizeRecord)
     selectedDate.value = today
     activeStatus.value = 'all'
     localStorage.removeItem(STORAGE_KEY)
@@ -1500,15 +1659,22 @@ function buildInitialLogs(id, status, index) {
 
 function normalizeRecord(record) {
   const legacyStatus = { invited: 'floorControl', reception: 'arrivalConfirmation', triage: 'doctorDiagnosis', scheduling: 'doctorDiagnosis' }
+  const nurseName = (record.id || '').length % 2 ? '张璐' : '洋洋'
+  const ownerMap = { market: '虚拟市场专员', service: '舒婷', butler: '林悦', director: '陈楠', manager: '赵阳', floorControl: '娜娜', consultant: '小咨', doctor: '小医', nurse: nurseName, cardConsultant: '虚拟卡姐', beautyConsultant: '虚拟美导' }
+  const migratedAssignments = Object.fromEntries(Object.entries({ ...(record.assignments || {}) }).map(([key, value]) => [key, ownerMap[key] || value]))
   const normalized = {
     ...record,
     status: legacyStatus[record.status] || record.status,
     projects: record.projects?.length ? record.projects : [record.estimatedProject].filter(Boolean),
     cardAmount: Number(record.cardAmount || 0),
-    assignments: { ...(record.assignments || {}), floorControl: record.assignments?.floorControl || '陈场控' },
-    floorControl: record.floorControl || {}, doctorDiagnosis: record.doctorDiagnosis || {}, serviceExecution: record.serviceExecution || {}, followupRecords: record.followupRecords || []
+    assignments: { ...migratedAssignments, floorControl: '娜娜', nurse: nurseName },
+    storeManager: '王晓歌',
+    floorControl: { ...(record.floorControl || {}), operator: '娜娜' }, doctorDiagnosis: record.doctorDiagnosis || {}, serviceExecution: { ...(record.serviceExecution || {}), operator: '舒婷' }, followupRecords: (record.followupRecords || []).map((item) => ({ ...item, operator: '舒婷', operatorName: '舒婷' }))
   }
+  normalized.doctorDiagnosis = { ...normalized.doctorDiagnosis, doctor: '小医', nurse: nurseName }
   const existingLogs = record.logs || []
+  normalized.cardConsultant = '虚拟卡姐'
+  normalized.beautyConsultant = '虚拟美导'
   const baselineLogs = buildInitialLogs(record.id, record.status, 0)
   const existingTransitions = new Set(existingLogs.map((log) => `${log.fromStatus}-${log.toStatus}`))
   const missingBaselineLogs = baselineLogs.filter((log) => !existingTransitions.has(`${log.fromStatus}-${log.toStatus}`))
@@ -1519,9 +1685,58 @@ function normalizeRecord(record) {
 }
 
 function ensureAppointmentSamples(source) {
-  const samples = createAppointmentSamples()
+  const samples = [...createAppointmentSamples(), ...createFutureDemoRecords()]
   const existingIds = new Set(source.map((record) => record.id))
   return [...source, ...samples.filter((record) => !existingIds.has(record.id))]
+}
+
+function createFutureDemoRecords() {
+  const projects = allProjects.value.length ? allProjects.value : ['面部护理']
+  const stages = ['invited', 'reception', 'triage', 'scheduling', 'service', 'followup']
+  const result = []
+  for (let dayOffset = 1; dayOffset <= 14; dayOffset += 1) {
+    const businessDate = addDays(today, dayOffset)
+    for (let index = 0; index < 10; index += 1) {
+      const seed = dayOffset * 31 + index * 7
+      const project = projects[seed % projects.length]
+      const id = `FUTURE-DEMO-${businessDate.replaceAll('-', '')}-${String(index + 1).padStart(2, '0')}`
+      const status = stages[seed % stages.length]
+      const logs = buildInitialLogs(id, status, seed % 4).map((log) => ({ ...log, time: `${businessDate}${log.time.slice(10)}` }))
+      result.push({
+        id,
+        businessDate,
+        appointmentTime: `${String(9 + (index % 9)).padStart(2, '0')}:${index % 2 ? '30' : '00'}`,
+        diagnosisType: index % 3 === 0 ? '新诊' : '复诊',
+        store: stores[seed % stores.length],
+        vip1: { name: `演示顾客${dayOffset}-${index + 1}`, phone: `138${String(10000000 + seed).slice(-8)}` },
+        vip2: index % 4 === 0 ? { name: '同行顾客', phone: `139${String(10000000 + seed).slice(-8)}` } : null,
+        cardConsultant: '虚拟卡姐',
+        beautyConsultant: '虚拟美导',
+        estimatedProject: project,
+        projects: [project],
+        department: departments[seed % departments.length],
+        estimatedAmount: 0,
+        paymentType: 'none',
+        revenue: 0,
+        cardAmount: 0,
+        note: '未来两周演示任务',
+        assignments: { market: '虚拟市场专员', service: '舒婷', butler: '林悦', director: '陈楠', manager: '赵阳', floorControl: '娜娜', consultant: '小咨', doctor: '小医', nurse: index % 2 ? '张璐' : '洋洋', storeManager: '王晓歌' },
+        storeManager: '王晓歌',
+        status,
+        appointmentStatus: 'pending',
+        flags: [],
+        source: 'future-demo',
+        followupDate: addDays(businessDate, 60),
+        floorControl: {},
+        arrivalConfirmation: {},
+        doctorDiagnosis: { doctor: '小医', nurse: index % 2 ? '张璐' : '洋洋' },
+        serviceExecution: {},
+        followupRecords: [],
+        logs
+      })
+    }
+  }
+  return result
 }
 
 function createAppointmentSamples() {
@@ -1625,7 +1840,7 @@ function localizedLogText(value) {
   return Object.entries(labels).reduce((text, [key, label]) => text.replaceAll(key, label), String(value || '—'))
 }
 
-function staffDisplay(record) {
+function baseStaffDisplay(record) {
   return [
     { label: '卡姐', name: record.cardConsultant },
     { label: '美导', name: record.beautyConsultant },
@@ -1644,6 +1859,13 @@ function staffDisplay(record) {
 function schedulingStaff(record) {
   const roleOrder = ['场控', '管家', '咨询', '总监', '经理', '医生', '护士']
   return staffDisplay(record).filter((item) => roleOrder.includes(item.label))
+}
+
+function staffDisplay(record) {
+  return baseStaffDisplay(record).map((item) => {
+    const employee = item.name && employees.value.find((candidate) => candidate.name === item.name)
+    return employee && employee.status !== 'active' ? { ...item, name: `${item.name}（已停用，待重新分配）` } : item
+  })
 }
 
 function attentionTone(record) {

@@ -26,7 +26,7 @@
       </el-select>
       <el-input v-model="keyword" clearable placeholder="搜索顾客、电话或项目"><template #prefix><el-icon><Search /></el-icon></template></el-input>
       <div v-if="canEdit" class="appointment-action-buttons">
-        <el-button type="primary" :icon="Upload" @click="$emit('open-import')">批量导入</el-button>
+        <el-button v-if="canImport" type="primary" :icon="Upload" @click="$emit('open-import')">批量导入</el-button>
         <el-button class="appointment-add-button" plain type="primary" :icon="Plus" @click="openCreate()">新增预约</el-button>
       </div>
     </section>
@@ -215,6 +215,7 @@ const props = defineProps({
   roleMeta: { type: Object, required: true },
   stores: { type: Array, required: true },
   staffOptions: { type: Array, default: () => [] },
+  permissions: { type: Object, default: () => ({}) },
   projectCatalog: { type: Array, required: true }
 })
 const emit = defineEmits(['update:records', 'open-record', 'open-import'])
@@ -232,7 +233,8 @@ const appointmentMeta = {
 }
 const selectedDate = ref(today)
 const viewMonth = ref(today.slice(0, 7))
-const storeFilter = ref(props.role === 'admin' ? 'all' : props.roleMeta.store)
+const accessibleStores = computed(() => props.role === 'admin' ? props.stores : (props.roleMeta.managedStores?.length ? props.roleMeta.managedStores : [props.roleMeta.store]))
+const storeFilter = ref(accessibleStores.value.length > 1 ? 'all' : accessibleStores.value[0])
 const statusFilter = ref('all')
 const diagnosisFilter = ref('all')
 const marketFilter = ref(props.role === 'market' ? props.roleMeta.name : 'all')
@@ -254,13 +256,25 @@ const ownerRoles = [
   { key: 'cardConsultant', label: '卡姐' }, { key: 'beautyConsultant', label: '美导' },
   { key: 'market', label: '市场' }, { key: 'service', label: '客服' },
   { key: 'butler', label: '管家' }, { key: 'manager', label: '经理' },
-  { key: 'director', label: '总监' }, { key: 'storeManager', label: '店长' }
+  { key: 'director', label: '总监' }, { key: 'storeManager', label: '院长' }
 ]
-const canEdit = computed(() => ['market','storeManager','admin'].includes(props.role))
+function hasPermission(path, action = 'operate') {
+  if (props.role === 'admin') return true
+  const direct = props.permissions?.[path]
+  if (Array.isArray(direct)) return direct.includes(action) || direct.includes('operate')
+  const root = path.split('.')[0]
+  const rootActions = props.permissions?.[root]
+  return Array.isArray(rootActions) && (rootActions.includes(action) || rootActions.includes('operate'))
+}
+const canEdit = computed(() => ['market','storeManager','admin'].includes(props.role) && hasPermission('appointments.appointmentList.point1', 'operate'))
+const canReschedule = computed(() => hasPermission('appointments.appointmentList.point3', 'operate'))
+const canCancel = computed(() => hasPermission('appointments.appointmentList.point4', 'operate'))
+const canImport = computed(() => hasPermission('workbench.batchImportInvitation.point1', 'view') || hasPermission('workbench.batchImportInvitation.point2', 'operate'))
 const calendarYear = computed(() => Number(viewMonth.value.slice(0,4)))
 const calendarMonth = computed(() => Number(viewMonth.value.slice(5,7)))
-const marketPeople = computed(() => [...new Set(props.records.map((x) => x.assignments?.market).filter(Boolean).concat(['苏晴','秦悦','叶青']))])
+const marketPeople = computed(() => [...new Set(props.records.map((x) => x.assignments?.market).filter(Boolean).concat(['小洁']))])
 const scopedRecords = computed(() => props.records.filter((record) => {
+  if (!accessibleStores.value.includes(record.store)) return false
   if (storeFilter.value !== 'all' && record.store !== storeFilter.value) return false
   if (statusFilter.value !== 'all' && appointmentStatus(record) !== statusFilter.value) return false
   if (diagnosisFilter.value !== 'all' && record.diagnosisType !== diagnosisFilter.value) return false
@@ -310,7 +324,7 @@ const createRules = {
 }
 const inviteRules = { result: [{ required: true, message: '请选择邀约结果', trigger: 'change' }], note: [{ required: true, message: '请填写沟通记录', trigger: 'blur' }] }
 const actionRules = { date: [{ required: true, message: '请选择日期', trigger: 'change' }], time: [{ required: true, message: '请选择时间', trigger: 'change' }], reason: [{ required: true, message: '请填写原因', trigger: 'blur' }] }
-watch(() => props.role, () => { storeFilter.value = props.role === 'admin' ? 'all' : props.roleMeta.store; marketFilter.value = props.role === 'market' ? props.roleMeta.name : 'all' })
+watch(() => [props.role, props.roleMeta.managedStores], () => { storeFilter.value = accessibleStores.value.length > 1 ? 'all' : accessibleStores.value[0]; marketFilter.value = props.role === 'market' ? props.roleMeta.name : 'all' }, { deep: true })
 
 function appointmentStatus(record) {
   if (record.appointmentStatus) return record.appointmentStatus
@@ -322,8 +336,8 @@ function appointmentStatus(record) {
 }
 function canEditRecord(record) {
   if (props.role === 'admin') return true
-  if (props.role === 'storeManager') return record.store === props.roleMeta.store
-  return props.role === 'market' && record.store === props.roleMeta.store && record.assignments?.market === props.roleMeta.name
+  if (props.role === 'storeManager') return accessibleStores.value.includes(record.store)
+  return props.role === 'market' && accessibleStores.value.includes(record.store) && record.assignments?.market === props.roleMeta.name && (canReschedule.value || canCancel.value)
 }
 function openCustomerDetail(record) {
   const phone = normalizePhone(record.vip1.phone)
@@ -352,7 +366,7 @@ function shiftMonth(delta) { const date = new Date(`${viewMonth.value}-01T12:00:
 function goToday() { viewMonth.value = today.slice(0,7); selectedDate.value = today }
 function selectDate(date) { selectedDate.value = date; if (!date.startsWith(viewMonth.value)) viewMonth.value = date.slice(0,7) }
 function openCreate(date = selectedDate.value) {
-  const store = props.role === 'admin' ? props.stores[0] : props.roleMeta.store
+  const store = accessibleStores.value[0]
   Object.keys(createForm).forEach((key) => delete createForm[key])
   Object.assign(createForm, {
     customerName: '', customerPhone: '', companionName: '', companionPhone: '', store, diagnosisType: '新诊', date, time: '10:00', projects: [], note: '',
@@ -388,11 +402,15 @@ async function saveAppointment() {
   ElMessage.success('预约已创建，并同步到工作台和顾客档案')
 }
 function staffOptionsFor(roleKey) {
-  return props.staffOptions.filter((employee) => employee.status === 'active' && employee.roleKey === roleKey && employee.store === createForm.store)
+  const aliases = { market: 'finance', service: 'aftersales', butler: 'storeManager', director: 'storeManager', manager: 'storeManager', cardConsultant: 'finance', beautyConsultant: 'finance' }
+  const effectiveRole = props.staffOptions.some((employee) => employee.roleKey === roleKey) ? roleKey : aliases[roleKey]
+  return props.staffOptions.filter((employee) => employee.status === 'active' && employee.roleKey === effectiveRole && employee.store === createForm.store)
 }
 function defaultOwner(roleKey, store) {
   if (props.role === roleKey) return props.roleMeta.name
-  return props.staffOptions.find((employee) => employee.status === 'active' && employee.roleKey === roleKey && employee.store === store)?.name || ''
+  const aliases = { market: 'finance', service: 'aftersales', butler: 'storeManager', director: 'storeManager', manager: 'storeManager', cardConsultant: 'finance', beautyConsultant: 'finance' }
+  const effectiveRole = props.staffOptions.some((employee) => employee.roleKey === roleKey) ? roleKey : aliases[roleKey]
+  return props.staffOptions.find((employee) => employee.status === 'active' && employee.roleKey === effectiveRole && employee.store === store)?.name || ''
 }
 function openInvite(record) { editingId.value = record.id; Object.assign(inviteForm, { result: '', note: '' }); inviteVisible.value = true }
 async function submitInvite() {

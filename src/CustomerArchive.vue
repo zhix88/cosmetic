@@ -60,9 +60,9 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="openCustomerDetail(row)">详情</el-button>
             <el-button v-if="row.status !== 'deleted'" link @click="openCustomerForm(row)">编辑</el-button>
-            <el-button v-if="canManageAssets && row.status === 'active'" link type="warning" @click="changeStatus(row, 'paused')">暂停</el-button>
-            <el-button v-if="canManageAssets && row.status !== 'active'" link type="success" @click="changeStatus(row, 'active')">恢复</el-button>
-            <el-button v-if="canManageAssets && row.status !== 'deleted'" link type="danger" @click="removeCustomer(row)">删除</el-button>
+            <el-button v-if="canManageCustomerStatus && row.status === 'active'" link type="warning" @click="changeStatus(row, 'paused')">暂停</el-button>
+            <el-button v-if="canManageCustomerStatus && row.status !== 'active'" link type="success" @click="changeStatus(row, 'active')">恢复</el-button>
+            <el-button v-if="canDeleteCustomer && row.status !== 'deleted'" link type="danger" @click="removeCustomer(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -284,6 +284,7 @@ const props = defineProps({
   roleMeta: { type: Object, required: true },
   stores: { type: Array, required: true },
   staffOptions: { type: Array, default: () => [] },
+  permissions: { type: Object, default: () => ({}) },
   projectCatalog: { type: Array, required: true },
   focusPhone: { type: String, default: '' },
   focusRequest: { type: Number, default: 0 }
@@ -294,7 +295,8 @@ const STORAGE_KEY = 'cosmetic-customer-archive-v1'
 const memberLevels = ['普通会员', '银卡', '金卡', '铂金', '黑金']
 const ownerRoles = [{ key: 'cardConsultant', label: '卡姐' }, { key: 'beautyConsultant', label: '美导' }, { key: 'market', label: '市场' }, { key: 'service', label: '客服' }, { key: 'butler', label: '管家' }, { key: 'manager', label: '经理' }, { key: 'director', label: '总监' }]
 const keyword = ref('')
-const storeFilter = ref(props.role === 'admin' ? 'all' : props.roleMeta.store)
+const accessibleStores = computed(() => props.role === 'admin' ? props.stores : (props.roleMeta.managedStores?.length ? props.roleMeta.managedStores : [props.roleMeta.store]))
+const storeFilter = ref(accessibleStores.value.length > 1 ? 'all' : accessibleStores.value[0])
 const levelFilter = ref('all')
 const statusFilter = ref('active')
 const visitRange = ref(null)
@@ -334,8 +336,19 @@ const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
 const customers = ref(mergeBusinessCustomers(saved, props.records))
 
 const activeCustomer = computed(() => customers.value.find((x) => x.id === activeCustomerId.value))
-const canManageAssets = computed(() => ['storeManager', 'admin'].includes(props.role))
-const scopedCustomers = computed(() => customers.value.filter((x) => props.role === 'admin' || x.store === props.roleMeta.store))
+function hasPermission(path, action = 'operate') {
+  if (props.role === 'admin') return true
+  const direct = props.permissions?.[path]
+  if (Array.isArray(direct) && (direct.includes(action) || direct.includes('operate'))) return true
+  if (Object.entries(props.permissions || {}).some(([key, actions]) => key.startsWith(`${path}.`) && Array.isArray(actions) && (actions.includes(action) || actions.includes('operate')))) return true
+  const root = path.split('.')[0]
+  const rootActions = props.permissions?.[root]
+  return Array.isArray(rootActions) && (rootActions.includes(action) || rootActions.includes('operate'))
+}
+const canManageAssets = computed(() => hasPermission('customers.customerDetail', 'operate'))
+const canManageCustomerStatus = computed(() => hasPermission('customers.customerList.point3', 'operate'))
+const canDeleteCustomer = computed(() => hasPermission('customers.customerList.point4', 'operate'))
+const scopedCustomers = computed(() => customers.value.filter((x) => accessibleStores.value.includes(x.store)))
 const filteredCustomers = computed(() => {
   const q = keyword.value.trim().toLowerCase()
   const rows = scopedCustomers.value.filter((x) => {
@@ -390,7 +403,7 @@ const followupRules = { date:[{required:true,message:'请选择回访日期',tri
 
 watch(customers, (value) => localStorage.setItem(STORAGE_KEY, JSON.stringify(value)), { deep: true })
 watch(() => props.records, (value) => { customers.value = mergeBusinessCustomers(customers.value, value) }, { deep: true })
-watch(() => props.role, () => { storeFilter.value = props.role === 'admin' ? 'all' : props.roleMeta.store })
+watch(() => [props.role, props.roleMeta.managedStores], () => { storeFilter.value = accessibleStores.value.length > 1 ? 'all' : accessibleStores.value[0] }, { deep: true })
 watch(() => props.focusRequest, () => {
   if (!props.focusPhone) return
   const customer = customers.value.find((x) => normalizePhone(x.phone) === normalizePhone(props.focusPhone))
@@ -428,6 +441,7 @@ function mergeBusinessCustomers(existing, records) {
     customer.owners ||= {}
     const latestRecord = [...related].sort((a, b) => `${a.businessDate}${a.appointmentTime}`.localeCompare(`${b.businessDate}${b.appointmentTime}`)).at(-1)
     if (latestRecord) Object.entries(ownerSnapshot(latestRecord)).forEach(([key, value]) => { if (!customer.owners[key] && value) customer.owners[key] = value })
+    customer.owners = migrateDemoOwners(customer.owners)
     customer.visitCount = related.length
     customer.totalSpend = related.reduce((sum, record) => sum + recordAmount(record), 0)
     const projectUsage = new Map()
@@ -463,6 +477,10 @@ function mergeBusinessCustomers(existing, records) {
   })
   return [...map.values()]
 }
+function migrateDemoOwners(owners = {}) {
+  const activeByRole = Object.fromEntries(props.staffOptions.filter((employee) => employee.status === 'active').map((employee) => [employee.roleKey, employee.name]))
+  return Object.fromEntries(Object.entries(owners).map(([key, value]) => [key, activeByRole[key] || value]))
+}
 function seedPackages(record) {
   if (!record.projects?.length || !recordAmount(record)) return []
   return record.projects.slice(0, 1).map((project) => ({ id: `PK${Date.now()}${project}`, project, purchased: 5, used: 1, amount: recordAmount(record), expiry: addDays(today(), 365), status: 'active', origin: 'business-sync' }))
@@ -477,7 +495,7 @@ function openCustomerForm(customer) {
   editingCustomerId.value = customer?.id || null
   Object.keys(customerForm).forEach((key) => delete customerForm[key])
   Object.assign(customerForm, customer ? { ...customer, tags:[...(customer.tags || [])], owners: { ...(customer.owners || {}) } } : {
-    name: '', phone: '', gender: '女', birthday: '', store: props.role === 'admin' ? props.stores[0] : props.roleMeta.store,
+    name: '', phone: '', gender: '女', birthday: '', store: accessibleStores.value[0],
     memberLevel: '普通会员', source: '手工建档', tags:[], preferences: '', taboos: '', preparation: '', note: '', owners: {}
   })
   customerFormVisible.value = true
