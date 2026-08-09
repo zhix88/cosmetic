@@ -1001,12 +1001,26 @@ const canViewDailyReports = computed(() => canView('dailyReports'))
 const canViewDealReports = computed(() => canView('dealReports'))
 const canViewSettings = computed(() => ['storeManager', 'admin'].includes(currentRole.value) && canView('settings'))
 const hasAllStores = computed(() => currentRole.value === 'admin' || currentRoleDefinition.value?.dataScope === '全部门店')
+const roleAssignmentKeys = {
+  aftersales: ['aftersales', 'aftercare', 'service'],
+  headNurse: ['headNurse', 'nurse']
+}
+function assignmentKeys(role) {
+  return roleAssignmentKeys[role] || [role]
+}
+function hasRecordAssignment(record, role, name) {
+  if (role === 'cardConsultant') return record.cardConsultant === name
+  if (role === 'beautyConsultant') return record.beautyConsultant === name
+  return assignmentKeys(role).some((key) => record.assignments?.[key] === name)
+}
+function roleOwnsWorkflow(role, workflowRole) {
+  return role === workflowRole || (role === 'aftersales' && workflowRole === 'service')
+}
 function recordInScope(record) {
   if (currentRole.value === 'admin') return true
   if (currentRoleDefinition.value?.dataScope === '指定门店') return currentRoleMeta.value.managedStores.includes(record.store)
   if (['storeManager', 'director'].includes(currentRole.value)) return currentRoleMeta.value.managedStores.includes(record.store)
-  const owner = currentRole.value === 'cardConsultant' ? record.cardConsultant : currentRole.value === 'beautyConsultant' ? record.beautyConsultant : record.assignments?.[currentRole.value]
-  return owner === currentRoleMeta.value.name
+  return hasRecordAssignment(record, currentRole.value, currentRoleMeta.value.name)
 }
 const scopedRecords = computed({ get: () => records.value.filter(recordInScope), set: (value) => { records.value = value.map(normalizeRecord) } })
 const dashboardRecords = computed(() => [...historicalRecords, ...records.value].filter(recordInScope))
@@ -1185,8 +1199,9 @@ function handleBatchImported(imported) {
 function canOperate(record) {
   if (record.source === 'history-demo') return false
   if (['completed', 'cancelled'].includes(record.status)) return false
-  if (['storeManager', 'admin'].includes(currentRole.value)) return true
-  return statusMeta[record.status]?.owner === currentRole.value && record.assignments[currentRole.value] === currentRoleMeta.value.name
+  if (['storeManager', 'admin'].includes(currentRole.value)) return recordInScope(record)
+  const workflowRole = statusMeta[record.status]?.owner
+  return roleOwnsWorkflow(currentRole.value, workflowRole) && hasRecordAssignment(record, currentRole.value, currentRoleMeta.value.name)
 }
 
 function canManage(record) {
@@ -1666,7 +1681,7 @@ function normalizeRecord(record) {
     status: legacyStatus[record.status] || record.status,
     projects: record.projects?.length ? record.projects : [record.estimatedProject].filter(Boolean),
     cardAmount: Number(record.cardAmount || 0),
-    assignments: { ...migratedAssignments, floorControl: '娜娜', nurse: nurseName },
+    assignments: { ...migratedAssignments, floorControl: '娜娜', nurse: nurseName, storeManager: '王晓歌' },
     storeManager: '王晓歌',
     floorControl: { ...(record.floorControl || {}), operator: '娜娜' }, doctorDiagnosis: record.doctorDiagnosis || {}, serviceExecution: { ...(record.serviceExecution || {}), operator: '舒婷' }, followupRecords: (record.followupRecords || []).map((item) => ({ ...item, operator: '舒婷', operatorName: '舒婷' }))
   }

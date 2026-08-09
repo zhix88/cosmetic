@@ -291,8 +291,20 @@ const mask = value => value ? `${value.slice(0, 3)}****${value.slice(-4)}` : '�
 const current = () => records.find(item => item.id === selectedId)
 const meta = status => stageMeta[status] || ['待处理', 'gray']
 const owner = item => item.assignments[ownerKey[item.status]] || '—'
-const isCurrentTask = item => ownerKey[item.status] === user?.roleKey && owner(item) === user?.name
-const belongsToUser = item => Object.values(item.assignments || {}).includes(user?.name) || isCurrentTask(item)
+const roleAssignmentKeys = { aftersales: ['aftersales', 'aftercare', 'service'], headNurse: ['headNurse', 'nurse'] }
+const assignmentKeys = role => roleAssignmentKeys[role] || [role]
+const isStoreManager = () => user?.roleKey === 'storeManager'
+const belongsToUser = item => {
+  if (!user) return false
+  if (isStoreManager()) return item.store === user.store
+  return assignmentKeys(user.roleKey).some(key => item.assignments?.[key] === user.name)
+}
+const isCurrentTask = item => {
+  if (isStoreManager()) return item.store === user?.store && !['completed', 'cancelled'].includes(item.status)
+  const workflowRole = ownerKey[item.status]
+  const canHandleWorkflow = workflowRole === user?.roleKey || (user?.roleKey === 'aftersales' && workflowRole === 'aftersales')
+  return canHandleWorkflow && belongsToUser(item)
+}
 const visibleRecords = () => records.filter(belongsToUser)
 const createdAt = item => item.logs?.find(log => String(log.action || '').includes('创建'))?.time || item.logs?.[0]?.time || `${item.businessDate || ''} ${item.time || ''}`
 const newestFirst = (a, b) => String(createdAt(b)).localeCompare(String(createdAt(a)))
@@ -333,7 +345,7 @@ const taskFilterMatches = item => {
   const text = `${item.name || ''}${item.phone || ''}${item.project || ''}${item.estimatedProject || ''}${item.notice || ''}${item.note || ''}${item.id || ''}`.toLowerCase()
   return scopeMatch && stageMatch && statusMatch && serviceDateMatch && departmentMatch && staffMatch && typeMatch && (!keyword || text.includes(keyword))
 }
-const taskFilteredRecords = () => records.filter(taskFilterMatches)
+const taskFilteredRecords = () => visibleRecords().filter(taskFilterMatches)
 const taskFilterSummary = () => {
   const f = taskFilterState
   const labels = []

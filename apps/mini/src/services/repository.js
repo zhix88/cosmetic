@@ -64,13 +64,23 @@ export function resetDemoData() { uni.setStorageSync(DATA_KEY, seedData()); uni.
 export function getSession() { return uni.getStorageSync(SESSION_KEY) || null }
 export function setSession(employee) { uni.setStorageSync(SESSION_KEY, employee) }
 export function logout() { uni.removeStorageSync(SESSION_KEY) }
-export function currentTasks(employee) { const data = getData(); return data.records.filter(record => stages[record.status]?.owner === employee.roleKey && record.assignments?.[employee.roleKey] === employee.name) }
+const roleAssignmentKeys = { aftersales: ['aftersales', 'aftercare', 'service'], headNurse: ['headNurse', 'nurse'] }
+const assignmentKeys = role => roleAssignmentKeys[role] || [role]
+const belongsToEmployee = (record, employee) => {
+  if (!employee) return false
+  if (employee.roleKey === 'storeManager') return record.store === employee.store
+  return assignmentKeys(employee.roleKey).some(key => record.assignments?.[key] === employee.name)
+}
+const canHandleStage = (record, employee) => {
+  if (employee?.roleKey === 'storeManager') return record.store === employee.store
+  return stages[record.status]?.owner === employee?.roleKey && belongsToEmployee(record, employee)
+}
+export function currentTasks(employee) { const data = getData(); return data.records.filter(record => canHandleStage(record, employee)) }
 export function customerRecords(customerId) { return getData().records.filter(item => item.customerId === customerId).sort((a, b) => `${b.businessDate}${b.appointmentTime}`.localeCompare(`${a.businessDate}${a.appointmentTime}`)) }
-export function accessibleCustomers(employee) { const data = getData(); const ids = new Set(data.records.filter(r => r.assignments?.[employee.roleKey] === employee.name).map(r => r.customerId)); return data.customers.filter(c => ids.has(c.id)) }
-
+export function accessibleCustomers(employee) { const data = getData(); const ids = new Set(data.records.filter(record => belongsToEmployee(record, employee)).map(record => record.customerId)); return data.customers.filter(customer => ids.has(customer.id)) }
 export function submitStage(recordId, employee, form) {
   const data = getData(); const record = data.records.find(item => item.id === recordId)
-  if (!record || stages[record.status]?.owner !== employee.roleKey || record.assignments?.[employee.roleKey] !== employee.name) throw new Error('无权处理该任务')
+  if (!record || !canHandleStage(record, employee)) throw new Error('无权处理该任务')
   const from = record.status; const to = nextStage[from]
   if (from === 'arrivalConfirmation' && form.result !== '已到店') {
     record.flags = [...record.flags, form.result === '申请改期' ? '顾客申请改期' : '未到店：需再次联系']
