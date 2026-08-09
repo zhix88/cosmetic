@@ -2,7 +2,7 @@ const DEMO_DATE = '2026-07-28'
 const ADMIN_WORKBENCH_KEY = 'cosmetic-workbench-v2'
 const SHARED_WORKBENCH_API = '/api/shared-workbench'
 const employees = [
-  { id: '10001', name: '王璞歆', role: '院长', roleKey: 'storeManager', store: '科臻澳总店', department: '院办', account: 'wangxiaoge', password: '123456' },
+  { id: '10001', name: '王晓歌', role: '院长', roleKey: 'storeManager', store: '科臻澳总店', department: '院办', account: 'wangxiaoge', password: '123456' },
   { id: '10002', name: '娜娜', role: '场控', roleKey: 'floorControl', store: '科臻澳总店', department: '客户服务部', account: 'nana', password: '123456' },
   { id: '10003', name: '张璐', role: '护士长', roleKey: 'headNurse', store: '科臻澳总店', department: '护理部', account: 'zhanglu', password: '123456' },
   { id: '10004', name: '洋洋', role: '护士长', roleKey: 'headNurse', store: '科臻澳总店', department: '护理部', account: 'yangyang', password: '123456' },
@@ -186,7 +186,7 @@ const seed = [
   record('B20260727005', '吴女士', '13800138005', '', '', '11:30', '复诊', '术后护理', 'arrivalConfirmation', '本周首日测试任务，待确认顾客到店', '2026-07-27')
 ]
 function record(id, name, phone, companion, companionPhone, time, type, project, status, notice, businessDate = DEMO_DATE) {
-  return { id, name, phone, companion, companionPhone, time, type, project, estimatedProject: project, projects: [project], businessDate, status, notice, store: '科臻澳总店', department: '皮肤管理科', assignments: { floorControl: '娜娜', doctor: '小医', service: '舒婷', aftercare: '舒婷', butler: '林悦', consultant: '小咨', director: '陈楠', manager: '赵阳', nurse: '张璐', storeManager: '王璞歆' }, floorControl: {}, arrivalConfirmation: {}, doctorDiagnosis: {}, serviceExecution: {}, followups: [], logs: [{ time: `${businessDate} 08:10`, action: '创建业务单', operator: '系统', detail: '由预约记录生成当天业务任务' }] }
+  return { id, name, phone, companion, companionPhone, time, type, project, estimatedProject: project, projects: [project], businessDate, status, notice, store: '科臻澳总店', department: '皮肤管理科', assignments: { floorControl: '娜娜', doctor: '小医', service: '舒婷', aftercare: '舒婷', butler: '林悦', consultant: '小咨', director: '陈楠', manager: '赵阳', nurse: '张璐', storeManager: '王晓歌' }, floorControl: {}, arrivalConfirmation: {}, doctorDiagnosis: {}, serviceExecution: {}, followups: [], logs: [{ time: `${businessDate} 08:10`, action: '创建业务单', operator: '系统', detail: '由预约记录生成当天业务任务' }] }
 }
 const savedUser = JSON.parse(localStorage.getItem('h5-user') || 'null')
 let user = savedUser?.name ? profileFor(employees.find(item => item.id === savedUser.id || item.name === savedUser.name) || savedUser) : null

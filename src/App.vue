@@ -700,7 +700,7 @@ const allProjects = computed(() => projectCatalog.flatMap((group) => group.optio
 const workflowLegend = ['批量导入', '场控排诊', '确认到店', '医生排诊', '服务执行', '顾客回访']
 
 const demoStaffRoster = [
-  ['10001', '王璞歆', '科臻澳总店', '院长', 'storeManager'],
+  ['10001', '王晓歌', '科臻澳总店', '院长', 'storeManager'],
   ['10002', '娜娜', '科臻澳总店', '场控', 'floorControl'],
   ['10003', '张璐', '科臻澳总店', '护士长', 'headNurse'],
   ['10004', '洋洋', '科臻澳总店', '护士长', 'headNurse'],
@@ -1667,7 +1667,7 @@ function normalizeRecord(record) {
     projects: record.projects?.length ? record.projects : [record.estimatedProject].filter(Boolean),
     cardAmount: Number(record.cardAmount || 0),
     assignments: { ...migratedAssignments, floorControl: '娜娜', nurse: nurseName },
-    storeManager: '王璞歆',
+    storeManager: '王晓歌',
     floorControl: { ...(record.floorControl || {}), operator: '娜娜' }, doctorDiagnosis: record.doctorDiagnosis || {}, serviceExecution: { ...(record.serviceExecution || {}), operator: '舒婷' }, followupRecords: (record.followupRecords || []).map((item) => ({ ...item, operator: '舒婷', operatorName: '舒婷' }))
   }
   normalized.doctorDiagnosis = { ...normalized.doctorDiagnosis, doctor: '小医', nurse: nurseName }
@@ -1719,8 +1719,8 @@ function createFutureDemoRecords() {
         revenue: 0,
         cardAmount: 0,
         note: '未来两周演示任务',
-        assignments: { market: '虚拟市场专员', service: '舒婷', butler: '林悦', director: '陈楠', manager: '赵阳', floorControl: '娜娜', consultant: '小咨', doctor: '小医', nurse: index % 2 ? '张璐' : '洋洋', storeManager: '王璞歆' },
-        storeManager: '王璞歆',
+        assignments: { market: '虚拟市场专员', service: '舒婷', butler: '林悦', director: '陈楠', manager: '赵阳', floorControl: '娜娜', consultant: '小咨', doctor: '小医', nurse: index % 2 ? '张璐' : '洋洋', storeManager: '王晓歌' },
+        storeManager: '王晓歌',
         status,
         appointmentStatus: 'pending',
         flags: [],
