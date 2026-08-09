@@ -42,7 +42,19 @@ const props = defineProps({ employees: { type: Array, default: () => [] } })
 const emit = defineEmits(['login'])
 const selectedCode = ref('')
 const password = ref('demo123')
-const activeEmployees = computed(() => props.employees.filter((item) => item.status === 'active' && item.code && item.roleKey))
+// 演示站优先展示业务主账号；其余在职账号仍可搜索和登录。
+// 使用账号编码而非数组下标排序，避免不同浏览器保存的员工配置导致顺序不一致。
+const primaryAccountOrder = ['10001', '10002', '10003', '10004', '10005', '10006']
+const primaryAccountRank = new Map(primaryAccountOrder.map((code, index) => [code, index]))
+const activeEmployees = computed(() => props.employees
+  .filter((item) => item.status === 'active' && item.code && item.roleKey)
+  .slice()
+  .sort((left, right) => {
+    const leftRank = primaryAccountRank.get(left.code) ?? Number.MAX_SAFE_INTEGER
+    const rightRank = primaryAccountRank.get(right.code) ?? Number.MAX_SAFE_INTEGER
+    if (leftRank !== rightRank) return leftRank - rightRank
+    return String(left.name).localeCompare(String(right.name), 'zh-CN')
+  }))
 const selectedEmployee = computed(() => activeEmployees.value.find((item) => item.code === selectedCode.value))
 watch(selectedCode, () => { password.value = 'demo123' })
 function submit() {

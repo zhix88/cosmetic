@@ -700,7 +700,7 @@ const allProjects = computed(() => projectCatalog.flatMap((group) => group.optio
 const workflowLegend = ['批量导入', '场控排诊', '确认到店', '医生排诊', '服务执行', '顾客回访']
 
 const demoStaffRoster = [
-  ['10001', '王晓歌', '科臻澳总店', '院长', 'storeManager'],
+  ['10001', '王璞歆', '科臻澳总店', '院长', 'storeManager'],
   ['10002', '娜娜', '科臻澳总店', '场控', 'floorControl'],
   ['10003', '张璐', '科臻澳总店', '护士长', 'headNurse'],
   ['10004', '洋洋', '科臻澳总店', '护士长', 'headNurse'],
@@ -1252,9 +1252,8 @@ function ensureAdminEmployee(rows) {
   const normalized = allDemoStaffRoster.map(([code, name, store, roleLabel, roleKey], index) => {
     const legacyCodes = [`E${String(index + 1).padStart(4, '0')}`, `V${String(index - 5).padStart(4, '0')}`]
     const existing = source.find((row) => row.code === code || legacyCodes.includes(row.code) || row.name === name) || {}
-    const staffNameMigration = { '虚拟咨询师': '小咨', '虚拟卡姐': '小卡', '虚拟美导': '小美' }
-    const migratedName = staffNameMigration[existing.name] || existing.name
-    return { code, name: migratedName || name, store, roleLabel, roleKey, status: 'active', label: roleLabel, ...existing, name: migratedName || name, code, id: existing.id || `staff-${code}`, label: existing.label || roleLabel }
+    // 主演示账号的身份信息以发布版本为准，避免旧的设置缓存覆盖账号名称或岗位。
+    return { ...existing, code, name, store, roleLabel, roleKey, status: 'active', id: existing.id || `staff-${code}`, label: roleLabel }
   })
   return normalized
 }
@@ -1668,7 +1667,7 @@ function normalizeRecord(record) {
     projects: record.projects?.length ? record.projects : [record.estimatedProject].filter(Boolean),
     cardAmount: Number(record.cardAmount || 0),
     assignments: { ...migratedAssignments, floorControl: '娜娜', nurse: nurseName },
-    storeManager: '王晓歌',
+    storeManager: '王璞歆',
     floorControl: { ...(record.floorControl || {}), operator: '娜娜' }, doctorDiagnosis: record.doctorDiagnosis || {}, serviceExecution: { ...(record.serviceExecution || {}), operator: '舒婷' }, followupRecords: (record.followupRecords || []).map((item) => ({ ...item, operator: '舒婷', operatorName: '舒婷' }))
   }
   normalized.doctorDiagnosis = { ...normalized.doctorDiagnosis, doctor: '小医', nurse: nurseName }
@@ -1720,8 +1719,8 @@ function createFutureDemoRecords() {
         revenue: 0,
         cardAmount: 0,
         note: '未来两周演示任务',
-        assignments: { market: '虚拟市场专员', service: '舒婷', butler: '林悦', director: '陈楠', manager: '赵阳', floorControl: '娜娜', consultant: '小咨', doctor: '小医', nurse: index % 2 ? '张璐' : '洋洋', storeManager: '王晓歌' },
-        storeManager: '王晓歌',
+        assignments: { market: '虚拟市场专员', service: '舒婷', butler: '林悦', director: '陈楠', manager: '赵阳', floorControl: '娜娜', consultant: '小咨', doctor: '小医', nurse: index % 2 ? '张璐' : '洋洋', storeManager: '王璞歆' },
+        storeManager: '王璞歆',
         status,
         appointmentStatus: 'pending',
         flags: [],

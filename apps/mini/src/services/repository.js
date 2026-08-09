@@ -20,7 +20,7 @@ const log = (operator, action, detail, fromStatus, toStatus, type = 'primary') =
 
 function seedData() {
   const employees = [
-    { id: '10001', name: '王晓歌', role: '院长', roleKey: 'storeManager', store: '科臻澳总店' },
+    { id: '10001', name: '王璞歆', role: '院长', roleKey: 'storeManager', store: '科臻澳总店' },
     { id: '10002', name: '娜娜', role: '场控', roleKey: 'floorControl', store: '科臻澳总店' },
     { id: '10003', name: '张璐', role: '护士长', roleKey: 'headNurse', store: '科臻澳总店' },
     { id: '10004', name: '洋洋', role: '护士长', roleKey: 'headNurse', store: '科臻澳总店' },
@@ -32,7 +32,7 @@ function seedData() {
     { id: 'C002', name: '周女士', gender: '女', birthday: '1989-11-02', phone: '13800138002', store: '科臻澳总店', memberLevel: '普通会员', source: '老客转介绍', preferences: '偏好微信沟通', taboos: '暂无记录', preparation: '医生初步评估已完成', note: '', owners: { floorControl: '娜娜', doctor: '小医', service: '舒婷', aftercare: '舒婷' }, balance: 0, points: 480, packages: [{ project: '面部抗衰', purchased: 3, used: 1, expiry: '2026-12-31' }], images: [], followups: [] },
     { id: 'C003', name: '孙女士', gender: '女', birthday: '1996-03-09', phone: '13800138003', store: '科臻澳总店', memberLevel: '铂金', source: '到店咨询', preferences: '重视隐私和恢复周期', taboos: '暂无记录', preparation: '等待服务后回访', note: '优先确认满意度', owners: { floorControl: '娜娜', doctor: '小医', service: '舒婷', aftercare: '舒婷' }, balance: 12000, points: 2100, packages: [{ project: '轮廓提升', purchased: 2, used: 1, expiry: '2027-01-01' }], images: [{ type: '术后', project: '轮廓提升', date: '2026-07-24' }], followups: [] }
   ]
-  const assignments = { floorControl: '娜娜', doctor: '小医', service: '舒婷', aftercare: '舒婷', butler: '林悦', director: '陈楠', manager: '赵阳', nurse: '张璐', storeManager: '王晓歌' }
+  const assignments = { floorControl: '娜娜', doctor: '小医', service: '舒婷', aftercare: '舒婷', butler: '林悦', director: '陈楠', manager: '赵阳', nurse: '张璐', storeManager: '王璞歆' }
   const records = [
     { id: 'B20260727001', customerId: 'C001', vip1: { name: '林女士', phone: '13800138001' }, vip2: { name: '王女士', phone: '13800138011' }, businessDate: date(), appointmentTime: '10:00', diagnosisType: '新诊', estimatedProject: '光子嫩肤', projects: [], department: '皮肤管理科', store: '科臻澳总店', status: 'floorControl', assignments, flags: ['今日到店，请提前完成排诊'], floorControl: {}, doctorDiagnosis: {}, serviceExecution: {}, followupRecords: [], logs: [log('系统', '创建业务单', '由预约记录生成当天业务任务', null, 'floorControl')] },
     { id: 'B20260727002', customerId: 'C002', vip1: { name: '周女士', phone: '13800138002' }, vip2: null, businessDate: date(), appointmentTime: '13:30', diagnosisType: '复诊', estimatedProject: '面部抗衰', projects: ['面部抗衰'], department: '抗衰中心', store: '科臻澳总店', status: 'doctorDiagnosis', assignments, flags: ['顾客已到店'], floorControl: { scheduledTime: `${date()} 12:50`, managerSuggestion: '面部抗衰', note: '复诊评估' }, doctorDiagnosis: {}, serviceExecution: {}, followupRecords: [], logs: [log('娜娜', '完成场控排诊', '顾客已到店，转医生排诊', 'floorControl', 'doctorDiagnosis')] },
@@ -46,7 +46,7 @@ function normalizeDemoData(data) {
   const seeded = seedData()
   const employees = seeded.employees
   const fallback = seeded.records[0].assignments
-  const assignmentMap = { floorControl: '娜娜', doctor: '小医', service: '舒婷', aftercare: '舒婷', butler: '林悦', director: '陈楠', manager: '赵阳', nurse: '张璐', storeManager: '王晓歌' }
+  const assignmentMap = { floorControl: '娜娜', doctor: '小医', service: '舒婷', aftercare: '舒婷', butler: '林悦', director: '陈楠', manager: '赵阳', nurse: '张璐', storeManager: '王璞歆' }
   const records = (data.records || []).map((record, index) => ({
     ...record,
     assignments: { ...fallback, ...(record.assignments || {}), ...assignmentMap },
