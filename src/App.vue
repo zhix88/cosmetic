@@ -1699,11 +1699,56 @@ function normalizeRecord(record) {
 }
 
 function ensureAppointmentSamples(source) {
-  const samples = [...createAppointmentSamples(), ...createFutureDemoRecords()]
+  const samples = [...createTodayDemoRecords(), ...createAppointmentSamples(), ...createFutureDemoRecords()]
   const existingIds = new Set(source.map((record) => record.id))
   return [...source, ...samples.filter((record) => !existingIds.has(record.id))]
 }
 
+function createTodayDemoRecords() {
+  const project = allProjects.value[0] || '\u9762\u90e8\u62a4\u7406'
+  const currentDayKey = today.replaceAll('-', '')
+  const cases = [
+    { time: '09:00', name: '\u6653\u6f6d\u5973\u58eb', phone: '13810008901', type: '\u65b0\u8bca', status: 'floorControl' },
+    { time: '10:30', name: '\u5b81\u5973\u58eb', phone: '13810008902', type: '\u590d\u8bca', status: 'arrivalConfirmation' },
+    { time: '14:00', name: '\u8d75\u5973\u58eb', phone: '13810008903', type: '\u65b0\u8bca', status: 'doctorDiagnosis' },
+    { time: '15:30', name: '\u79e6\u5973\u58eb', phone: '13810008904', type: '\u590d\u8bca', status: 'service' }
+  ]
+  return cases.map((item, index) => {
+    const id = `TODAY-DEMO-${currentDayKey}-${String(index + 1).padStart(2, '0')}`
+    return {
+      id,
+      businessDate: today,
+      appointmentTime: item.time,
+      diagnosisType: item.type,
+      store: '\u79d1\u81fb\u6fb3\u603b\u5e97',
+      vip1: { name: item.name, phone: item.phone },
+      vip2: null,
+      cardConsultant: '\u865a\u62df\u5361\u59d0',
+      beautyConsultant: '\u865a\u62df\u7f8e\u5bfc',
+      estimatedProject: project,
+      projects: [project],
+      department: index % 2 ? '\u76ae\u80a4\u7ba1\u7406\u79d1' : '\u6297\u8870\u4e2d\u5fc3',
+      estimatedAmount: 0,
+      paymentType: 'none',
+      revenue: 0,
+      cardAmount: 0,
+      note: '\u5f53\u65e5\u6f14\u793a\u4e1a\u52a1\uff0c\u7528\u4e8e\u9a8c\u8bc1\u5f53\u65e5\u5de5\u4f5c\u53f0\u4e0e\u89d2\u8272\u6743\u9650\u3002',
+      assignments: { market: '\u865a\u62df\u5e02\u573a\u4e13\u5458', service: '\u8212\u5a77', butler: '\u6797\u60a6', director: '\u9648\u6960', manager: '\u8d75\u9633', floorControl: '\u5a1c\u5a1c', consultant: '\u5c0f\u54a8', doctor: '\u5c0f\u533b', nurse: index % 2 ? '\u5f20\u7490' : '\u6d0b\u6d0b', storeManager: '\u738b\u6653\u6b4c' },
+      storeManager: '\u738b\u6653\u6b4c',
+      status: item.status,
+      appointmentStatus: item.status === 'arrivalConfirmation' ? 'arrived' : 'pending',
+      flags: [],
+      source: 'today-demo',
+      followupDate: addDays(today, 60),
+      floorControl: {},
+      arrivalConfirmation: {},
+      doctorDiagnosis: { doctor: '\u5c0f\u533b', nurse: index % 2 ? '\u5f20\u7490' : '\u6d0b\u6d0b' },
+      serviceExecution: {},
+      followupRecords: [],
+      logs: buildInitialLogs(id, item.status, index)
+    }
+  })
+}
 function createFutureDemoRecords() {
   const projects = allProjects.value.length ? allProjects.value : ['面部护理']
   const stages = ['invited', 'reception', 'triage', 'scheduling', 'service', 'followup']
