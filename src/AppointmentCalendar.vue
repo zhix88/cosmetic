@@ -9,9 +9,9 @@
     </section>
 
     <section class="appointment-filters">
-      <el-select v-model="storeFilter" :disabled="role !== 'admin'">
-        <el-option v-if="role === 'admin'" label="全部门店" value="all" />
-        <el-option v-for="store in stores" :key="store" :label="store" :value="store" />
+      <el-select v-model="storeFilter" :disabled="accessibleStores.length <= 1">
+        <el-option v-if="accessibleStores.length > 1" label="全部门店" value="all" />
+        <el-option v-for="store in accessibleStores" :key="store" :label="store" :value="store" />
       </el-select>
       <el-select v-model="statusFilter">
         <el-option label="全部预约状态" value="all" />
@@ -77,17 +77,18 @@
                 <el-tag :type="appointmentMeta[appointmentStatus(record)].type" round>{{ appointmentMeta[appointmentStatus(record)].label }}</el-tag>
               </div>
               <dl>
-                <div><dt>同行顾客</dt><dd>{{ record.vip2?.name || '—' }}</dd></div>
+                <div><dt>同行顾客</dt><dd>{{ companionSummary(record) }}</dd></div>
                 <div><dt>预约项目</dt><dd>{{ record.projects?.join('、') || record.estimatedProject }}</dd></div>
                 <div><dt>市场负责人</dt><dd>{{ record.assignments.market }}</dd></div>
               </dl>
               <div v-if="slotCount(record) > capacity" class="capacity-warning"><el-icon><Warning /></el-icon>该时段已有 {{ slotCount(record) }} 组预约，超过建议容量</div>
               <div class="appointment-actions" @click.stop>
                 <el-button link @click="$emit('open-record', record)">详情</el-button>
-                <el-button v-if="canEditRecord(record) && ['pending','unconfirmed'].includes(appointmentStatus(record))" link type="primary" @click="openInvite(record)">处理邀约</el-button>
-                <el-dropdown v-if="canEditRecord(record)" @command="handleCommand($event, record)">
+                <el-button v-if="canProcessInvitation(record) && ['pending','unconfirmed'].includes(appointmentStatus(record))" link type="primary" @click="openInvite(record)">处理邀约</el-button>
+                <el-button v-if="canEditAppointment && canEditRecord(record)" link type="primary" @click="openEdit(record)">编辑</el-button>
+                <el-dropdown v-if="canEditRecord(record) && (canReschedule || canCancel)" @command="handleCommand($event, record)">
                   <el-button link>更多<el-icon><ArrowDown /></el-icon></el-button>
-                  <template #dropdown><el-dropdown-menu><el-dropdown-item command="reschedule">改期</el-dropdown-item><el-dropdown-item v-if="appointmentStatus(record) === 'cancelled'" command="reinvite">重新邀约</el-dropdown-item><el-dropdown-item v-else command="cancel" divided>取消预约</el-dropdown-item></el-dropdown-menu></template>
+                  <template #dropdown><el-dropdown-menu><el-dropdown-item v-if="canReschedule" command="reschedule">改期</el-dropdown-item><el-dropdown-item v-if="appointmentStatus(record) === 'cancelled' && canProcessInvitation(record)" command="reinvite">重新邀约</el-dropdown-item><el-dropdown-item v-else-if="canCancel" command="cancel" divided>取消预约</el-dropdown-item></el-dropdown-menu></template>
                 </el-dropdown>
               </div>
             </div>
@@ -97,15 +98,25 @@
       </aside>
     </section>
 
-    <el-dialog v-model="createVisible" title="新增预约" width="760px">
+    <el-dialog v-model="createVisible" :title="editingId ? '编辑预约' : '新增预约'" width="760px" @closed="$emit('appointment-dialog-closed')">
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top">
-        <el-alert title="可填写新顾客姓名和手机号，保存后将自动同步到顾客档案。" type="info" :closable="false" show-icon />
+        <el-alert title="主顾客与同行顾客均从系统顾客档案中选择；选择后自动带入姓名、手机号、所属门店和人员归属。" type="info" :closable="false" show-icon />
         <div class="appointment-form-grid form-gap-top">
-          <el-form-item label="主顾客姓名" prop="customerName"><el-input v-model="createForm.customerName" /></el-form-item>
-          <el-form-item label="主顾客手机号" prop="customerPhone"><el-input v-model="createForm.customerPhone" /></el-form-item>
-          <el-form-item label="同行顾客姓名"><el-input v-model="createForm.companionName" /></el-form-item>
-          <el-form-item label="同行顾客手机号"><el-input v-model="createForm.companionPhone" /></el-form-item>
-          <el-form-item label="预约门店" prop="store"><el-select v-model="createForm.store" :disabled="role !== 'admin'"><el-option v-for="store in stores" :key="store" :label="store" :value="store" /></el-select></el-form-item>
+          <el-form-item label="选择主顾客" prop="customerPhone" class="appointment-form-span-2">
+            <el-select v-model="createForm.customerPhone" filterable clearable placeholder="从系统顾客档案中选择" @change="applyMainCustomer">
+              <el-option v-for="customer in mainCustomerOptions" :key="customer.phone" :label="customerOptionLabel(customer)" :value="customer.phone" />
+            </el-select>
+            <small class="form-help">仅显示当前数据权限范围内、已在顾客档案中存在的顾客</small>
+          </el-form-item>
+          <el-form-item label="主顾客姓名"><el-input v-model="createForm.customerName" disabled /></el-form-item>
+          <el-form-item label="主顾客手机号"><el-input v-model="createForm.customerPhone" disabled /></el-form-item>
+          <el-form-item label="同行顾客（可多选）" class="appointment-form-span-2">
+            <el-select v-model="createForm.companionPhones" multiple filterable clearable collapse-tags collapse-tags-tooltip :max-collapse-tags="3" placeholder="从系统顾客档案中选择">
+              <el-option v-for="customer in companionCustomerOptions" :key="customer.phone" :label="customerOptionLabel(customer)" :value="customer.phone" />
+            </el-select>
+            <small class="form-help">仅显示当前数据权限范围内、已在顾客档案中存在的顾客</small>
+          </el-form-item>
+          <el-form-item label="预约门店" prop="store"><el-select v-model="createForm.store" :disabled="accessibleStores.length === 1"><el-option v-for="store in accessibleStores" :key="store" :label="store" :value="store" /></el-select></el-form-item>
           <el-form-item label="诊疗类型" prop="diagnosisType"><el-radio-group v-model="createForm.diagnosisType"><el-radio value="新诊">新诊</el-radio><el-radio value="复诊">复诊</el-radio></el-radio-group></el-form-item>
           <el-form-item label="预约日期" prop="date"><el-date-picker v-model="createForm.date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
           <el-form-item label="预约时间" prop="time"><el-time-select v-model="createForm.time" start="08:00" step="00:30" end="20:00" /></el-form-item>
@@ -117,7 +128,7 @@
         </div>
         <el-form-item label="备注"><el-input v-model="createForm.note" type="textarea" :rows="3" /></el-form-item>
       </el-form>
-      <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" @click="saveAppointment">保存预约</el-button></template>
+      <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" @click="saveAppointment">{{ editingId ? '保存修改' : '保存预约' }}</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="inviteVisible" title="邀约处理" width="560px">
@@ -208,17 +219,20 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ArrowDown, ArrowLeft, ArrowRight, Calendar, CircleCheck, CircleClose, Plus, Search, Star, Upload, UserFilled, Warning } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { canUseBatchImportInvitation } from './demoPermissions.js'
 
 const props = defineProps({
   records: { type: Array, required: true },
+  allRecords: { type: Array, default: () => [] },
   role: { type: String, required: true },
   roleMeta: { type: Object, required: true },
+  dataScope: { type: String, default: '本人' },
   stores: { type: Array, required: true },
   staffOptions: { type: Array, default: () => [] },
   permissions: { type: Object, default: () => ({}) },
   projectCatalog: { type: Array, required: true }
 })
-const emit = defineEmits(['update:records', 'open-record', 'open-import'])
+const emit = defineEmits(['update:records', 'open-record', 'open-import', 'appointment-saved', 'appointment-dialog-closed'])
 const today = new Date().toISOString().slice(0, 10)
 const weekdays = ['周一','周二','周三','周四','周五','周六','周日']
 const capacity = 3
@@ -252,6 +266,7 @@ const inviteForm = reactive({})
 const actionForm = reactive({})
 const customerDetailVisible = ref(false)
 const detailCustomer = ref(null)
+const customerDirectoryVersion = ref(0)
 const ownerRoles = [
   { key: 'cardConsultant', label: '卡姐' }, { key: 'beautyConsultant', label: '美导' },
   { key: 'market', label: '市场' }, { key: 'service', label: '客服' },
@@ -266,13 +281,34 @@ function hasPermission(path, action = 'operate') {
   const rootActions = props.permissions?.[root]
   return Array.isArray(rootActions) && (rootActions.includes(action) || rootActions.includes('operate'))
 }
-const canEdit = computed(() => ['market','storeManager','admin'].includes(props.role) && hasPermission('appointments.appointmentList.point1', 'operate'))
+const canEdit = computed(() => hasPermission('appointments.appointmentList.point1', 'operate'))
+const canEditAppointment = computed(() => hasPermission('appointments.appointmentList.point2', 'operate'))
 const canReschedule = computed(() => hasPermission('appointments.appointmentList.point3', 'operate'))
 const canCancel = computed(() => hasPermission('appointments.appointmentList.point4', 'operate'))
-const canImport = computed(() => hasPermission('workbench.batchImportInvitation.point1', 'view') || hasPermission('workbench.batchImportInvitation.point2', 'operate'))
+const canImport = computed(() => canUseBatchImportInvitation(props.permissions, props.role === 'admin'))
+const canProcessInvitation = (record) => accessibleStores.value.includes(record.store) && hasPermission('workbench.progressBoard.point4', 'operate')
 const calendarYear = computed(() => Number(viewMonth.value.slice(0,4)))
 const calendarMonth = computed(() => Number(viewMonth.value.slice(5,7)))
 const marketPeople = computed(() => [...new Set(props.records.map((x) => x.assignments?.market).filter(Boolean).concat(['小洁']))])
+const customerDirectory = computed(() => {
+  void customerDirectoryVersion.value
+  const map = new Map()
+  const addCustomer = (person, fallbackStore = '') => {
+    const phone = normalizePhone(person?.phone)
+    const store = person?.store || fallbackStore
+    if (!/^1\d{10}$/.test(phone) || !accessibleStores.value.includes(store) || person?.status === 'deleted') return
+    map.set(phone, { ...(map.get(phone) || {}), ...person, phone, store })
+  }
+  const sourceRecords = props.allRecords.length ? props.allRecords : props.records
+  sourceRecords.forEach((record) => recordPeople(record).forEach((person) => addCustomer(person, record.store)))
+  readStoredCustomers().forEach((customer) => addCustomer(customer, customer.store))
+  return [...map.values()].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN'))
+})
+const mainCustomerOptions = computed(() => customerDirectory.value.filter((customer) => customer.status !== 'deleted'))
+const companionCustomerOptions = computed(() => {
+  const mainPhone = normalizePhone(createForm.customerPhone)
+  return customerDirectory.value.filter((customer) => customer.phone !== mainPhone && customer.status !== 'deleted')
+})
 const scopedRecords = computed(() => props.records.filter((record) => {
   if (!accessibleStores.value.includes(record.store)) return false
   if (storeFilter.value !== 'all' && record.store !== storeFilter.value) return false
@@ -280,7 +316,7 @@ const scopedRecords = computed(() => props.records.filter((record) => {
   if (diagnosisFilter.value !== 'all' && record.diagnosisType !== diagnosisFilter.value) return false
   if (marketFilter.value !== 'all' && record.assignments?.market !== marketFilter.value) return false
   const q = keyword.value.trim().toLowerCase()
-  return !q || [record.vip1?.name, record.vip1?.phone, record.vip2?.name, record.vip2?.phone, record.estimatedProject].some((x) => String(x || '').toLowerCase().includes(q))
+  return !q || [...recordPeople(record).flatMap((person) => [person.name, person.phone]), record.estimatedProject].some((x) => String(x || '').toLowerCase().includes(q))
 }))
 const monthRecords = computed(() => scopedRecords.value.filter((x) => x.businessDate.startsWith(viewMonth.value)))
 const confirmedCount = computed(() => monthRecords.value.filter((x) => ['confirmed','arrived','completed'].includes(appointmentStatus(x))).length)
@@ -314,7 +350,7 @@ const calendarCells = computed(() => {
 })
 const createRules = {
   customerName: [{ required: true, message: '请填写顾客姓名', trigger: 'blur' }],
-  customerPhone: [{ required: true, pattern: /^1\d{10}$/, message: '请输入11位手机号', trigger: 'blur' }],
+  customerPhone: [{ required: true, pattern: /^1\d{10}$/, message: '请选择顾客档案', trigger: 'change' }],
   store: [{ required: true, message: '请选择门店', trigger: 'change' }],
   diagnosisType: [{ required: true, message: '请选择诊疗类型', trigger: 'change' }],
   date: [{ required: true, message: '请选择日期', trigger: 'change' }],
@@ -323,7 +359,7 @@ const createRules = {
   projects: [{ required: true, type: 'array', min: 1, message: '请选择预约项目', trigger: 'change' }]
 }
 const inviteRules = { result: [{ required: true, message: '请选择邀约结果', trigger: 'change' }], note: [{ required: true, message: '请填写沟通记录', trigger: 'blur' }] }
-const actionRules = { date: [{ required: true, message: '请选择日期', trigger: 'change' }], time: [{ required: true, message: '请选择时间', trigger: 'change' }], reason: [{ required: true, message: '请填写原因', trigger: 'blur' }] }
+const actionRules = { date: [{ required: true, message: '请选择日期', trigger: 'change' }], time: [{ required: true, message: '请选择时间', trigger: 'change' }] }
 watch(() => [props.role, props.roleMeta.managedStores], () => { storeFilter.value = accessibleStores.value.length > 1 ? 'all' : accessibleStores.value[0]; marketFilter.value = props.role === 'market' ? props.roleMeta.name : 'all' }, { deep: true })
 
 function appointmentStatus(record) {
@@ -335,16 +371,13 @@ function appointmentStatus(record) {
   return record.status === 'completed' ? 'completed' : 'pending'
 }
 function canEditRecord(record) {
-  if (props.role === 'admin') return true
-  if (props.role === 'storeManager') return accessibleStores.value.includes(record.store)
-  return props.role === 'market' && accessibleStores.value.includes(record.store) && record.assignments?.market === props.roleMeta.name && (canReschedule.value || canCancel.value)
+  return accessibleStores.value.includes(record.store) && (canEditAppointment.value || canReschedule.value || canCancel.value)
 }
 function openCustomerDetail(record) {
   const phone = normalizePhone(record.vip1.phone)
-  const rows = props.records.filter((item) => [item.vip1, item.vip2].filter(Boolean).some((person) => normalizePhone(person.phone) === phone))
+  const rows = props.records.filter((item) => recordPeople(item).some((person) => normalizePhone(person.phone) === phone))
     .sort((a, b) => `${b.businessDate} ${b.appointmentTime}`.localeCompare(`${a.businessDate} ${a.appointmentTime}`))
-  const stored = JSON.parse(localStorage.getItem('cosmetic-customer-archive-v1') || '[]')
-    .find((customer) => normalizePhone(customer.phone) === phone)
+  const stored = readStoredCustomers().find((customer) => normalizePhone(customer.phone) === phone)
   const packages = stored?.packages?.length ? stored.packages : buildPackages(rows)
   detailCustomer.value = {
     name: stored?.name || record.vip1.name,
@@ -365,42 +398,130 @@ function openCustomerDetail(record) {
 function shiftMonth(delta) { const date = new Date(`${viewMonth.value}-01T12:00:00`); date.setMonth(date.getMonth() + delta); viewMonth.value = date.toISOString().slice(0,7); selectedDate.value = `${viewMonth.value}-01` }
 function goToday() { viewMonth.value = today.slice(0,7); selectedDate.value = today }
 function selectDate(date) { selectedDate.value = date; if (!date.startsWith(viewMonth.value)) viewMonth.value = date.slice(0,7) }
-function openCreate(date = selectedDate.value) {
-  const store = accessibleStores.value[0]
+function openCreate(date = selectedDate.value, preferredStore = '', presetCustomer = null) {
+  customerDirectoryVersion.value += 1
+  editingId.value = null
+  const store = preferredStore && accessibleStores.value.includes(preferredStore) ? preferredStore : accessibleStores.value[0]
   Object.keys(createForm).forEach((key) => delete createForm[key])
   Object.assign(createForm, {
-    customerName: '', customerPhone: '', companionName: '', companionPhone: '', store, diagnosisType: '新诊', date, time: '10:00', projects: [], note: '',
+    customerName: presetCustomer?.name || '', customerPhone: normalizePhone(presetCustomer?.phone), companionPhones: [], store, diagnosisType: '新诊', date, time: '10:00', projects: [], note: '',
     ...Object.fromEntries(ownerRoles.map(({ key }) => [key, defaultOwner(key, store)]))
+  })
+  if (presetCustomer?.phone) applyMainCustomer(presetCustomer.phone, presetCustomer)
+  createVisible.value = true
+}
+function openEdit(record) {
+  customerDirectoryVersion.value += 1
+  editingId.value = record.id
+  Object.keys(createForm).forEach((key) => delete createForm[key])
+  Object.assign(createForm, {
+    customerName: record.vip1.name, customerPhone: record.vip1.phone, companionPhones: recordCompanions(record).map((person) => normalizePhone(person.phone)),
+    store: record.store, diagnosisType: record.diagnosisType, date: record.businessDate, time: record.appointmentTime,
+    projects: [...(record.projects || [record.estimatedProject].filter(Boolean))], note: record.note || '',
+    ...Object.fromEntries(ownerRoles.map(({ key }) => [key, key === 'storeManager' ? (record.storeManager || '') : (record[key] || record.assignments?.[key] || '')]))
   })
   createVisible.value = true
 }
 async function saveAppointment() {
   if (!await createFormRef.value?.validate().catch(() => false)) return
-  const activeSameDay = props.records.filter((x) => x.businessDate === createForm.date && x.vip1?.phone === createForm.customerPhone && appointmentStatus(x) !== 'cancelled')
+  if (!accessibleStores.value.includes(createForm.store)) return ElMessage.error('无权在该门店维护预约')
+  const mainPhone = normalizePhone(createForm.customerPhone)
+  const companions = selectedCompanions()
+  if (companions.length !== (createForm.companionPhones || []).length) return ElMessage.error('同行顾客已失效或不在当前数据权限范围，请重新选择')
+  if (companions.some((person) => normalizePhone(person.phone) === mainPhone)) return ElMessage.warning('主顾客不能同时设置为同行顾客')
+  const validationRecords = props.allRecords.length ? props.allRecords : props.records
+  const activeSameDay = validationRecords.filter((x) => x.id !== editingId.value && x.businessDate === createForm.date && normalizePhone(x.vip1?.phone) === mainPhone && appointmentStatus(x) !== 'cancelled')
   if (activeSameDay.length && !['storeManager','admin'].includes(props.role)) return ElMessage.warning('该顾客当天已有有效预约，请联系店长处理')
   if (activeSameDay.length) await ElMessageBox.confirm('该顾客当天已有有效预约，确认继续创建？', '重复预约提醒', { type: 'warning' })
-  const slotRows = props.records.filter((x) => x.businessDate === createForm.date && x.appointmentTime === createForm.time && x.store === createForm.store && appointmentStatus(x) !== 'cancelled')
+  const slotRows = validationRecords.filter((x) => x.id !== editingId.value && x.businessDate === createForm.date && x.appointmentTime === createForm.time && x.store === createForm.store && appointmentStatus(x) !== 'cancelled')
   if (slotRows.length >= capacity) {
     if (!['storeManager','admin'].includes(props.role)) return ElMessage.warning('该时段已超过建议容量，请调整时间')
     await ElMessageBox.confirm(`该时段已有${slotRows.length}组预约，确认继续保存？`, '容量预警', { type: 'warning' })
   }
+  const existing = editingId.value ? props.records.find((item) => item.id === editingId.value) : null
+  if (existing) {
+    if (!canEditRecord(existing)) return ElMessage.error('该预约不在当前数据范围内')
+    Object.assign(existing, {
+      businessDate: createForm.date, appointmentTime: createForm.time, diagnosisType: createForm.diagnosisType, store: createForm.store,
+      vip1: { name: createForm.customerName, phone: mainPhone }, companions, vip2: companions[0] || null,
+      cardConsultant: createForm.cardConsultant, beautyConsultant: createForm.beautyConsultant, estimatedProject: createForm.projects.join('、'), projects: [...createForm.projects],
+      note: createForm.note, assignments: { ...(existing.assignments || {}), market: createForm.market, service: createForm.service, butler: createForm.butler, director: createForm.director, manager: createForm.manager }, storeManager: createForm.storeManager
+    })
+    addLog(existing, '编辑预约', '更新预约资料、项目及人员归属', existing.status, existing.status)
+    emit('update:records', [...props.records])
+    createVisible.value = false
+    ElMessage.success('预约资料已更新')
+    return
+  }
   const id = `B${createForm.date.replaceAll('-','')}${String(Date.now()).slice(-5)}`
   const record = {
     id, businessDate: createForm.date, appointmentTime: createForm.time, diagnosisType: createForm.diagnosisType, store: createForm.store,
-    vip1: { name: createForm.customerName, phone: createForm.customerPhone }, vip2: createForm.companionName ? { name: createForm.companionName, phone: createForm.companionPhone } : null,
+    vip1: { name: createForm.customerName, phone: mainPhone }, companions, vip2: companions[0] || null,
     cardConsultant: createForm.cardConsultant, beautyConsultant: createForm.beautyConsultant, estimatedProject: createForm.projects.join('、'), projects: [...createForm.projects],
     estimatedAmount: 0, paymentType: 'none', revenue: 0, cardAmount: 0, note: createForm.note,
     assignments: { market: createForm.market, service: createForm.service, butler: createForm.butler, director: createForm.director, manager: createForm.manager },
     storeManager: createForm.storeManager,
-    department: '', followupDate: addDays(createForm.date, 1), status: 'invited', appointmentStatus: 'pending', flags: [],
+    department: '', followupDate: addDays(createForm.date, 1), status: 'invited', appointmentStatus: 'pending', flags: [], createdBy: { role: props.role, name: props.roleMeta.name },
     logs: [{ id: `${id}-created`, time: nowText(), operator: `${props.roleMeta.label}·${props.roleMeta.name}`, action: '创建邀约', detail: `预约${createForm.date} ${createForm.time}到店，进入场控排诊`, fromStatus: 'floorControl', toStatus: 'floorControl', type: 'primary' }], status: 'floorControl', floorControl: { createdTime: nowText() }, doctorDiagnosis: {}, serviceExecution: {}, followupRecords: []
   }
   emit('update:records', [...props.records, record])
+  emit('appointment-saved', record)
   createVisible.value = false
   selectedDate.value = createForm.date
   viewMonth.value = createForm.date.slice(0,7)
   ElMessage.success('预约已创建，并同步到工作台和顾客档案')
 }
+defineExpose({ openCreate })
+
+function recordCompanions(record) {
+  const source = Array.isArray(record?.companions) ? record.companions : [record?.vip2].filter(Boolean)
+  const seen = new Set()
+  return source.filter((person) => {
+    const key = normalizePhone(person?.phone) || person?.id || person?.name
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+function recordPeople(record) { return [record?.vip1, ...recordCompanions(record)].filter(Boolean) }
+function companionSummary(record) {
+  const companions = recordCompanions(record)
+  if (!companions.length) return '—'
+  const names = companions.slice(0, 2).map((person) => person.name).join('、')
+  return companions.length > 2 ? `${names} 等${companions.length}人` : names
+}
+function readStoredCustomers() {
+  try { return JSON.parse(localStorage.getItem('cosmetic-customer-archive-v1') || '[]') }
+  catch { return [] }
+}
+function customerOptionLabel(customer) {
+  const status = customer.status === 'paused' ? ' · 已暂停' : ''
+  return `${customer.name} · ${maskPhone(customer.phone)} · ${customer.store}${status}`
+}
+function applyMainCustomer(phone, fallbackCustomer = null) {
+  const normalizedPhone = normalizePhone(phone)
+  const customer = customerDirectory.value.find((item) => item.phone === normalizedPhone) || fallbackCustomer
+  if (!customer) {
+    createForm.customerName = ''
+    createForm.customerPhone = ''
+    return
+  }
+  const customerStore = accessibleStores.value.includes(customer.store) ? customer.store : createForm.store
+  createForm.customerName = customer.name || ''
+  createForm.customerPhone = normalizedPhone
+  createForm.store = customerStore
+  createForm.companionPhones = (createForm.companionPhones || []).filter((item) => normalizePhone(item) !== normalizedPhone)
+  ownerRoles.forEach(({ key }) => {
+    const archivedOwner = customer.owners?.[key]
+    const activeOption = staffOptionsFor(key).some((employee) => employee.name === archivedOwner)
+    createForm[key] = activeOption ? archivedOwner : defaultOwner(key, customerStore)
+  })
+}
+function selectedCompanions() {
+  const directory = new Map(customerDirectory.value.map((customer) => [customer.phone, customer]))
+  return (createForm.companionPhones || []).map((phone) => directory.get(normalizePhone(phone))).filter(Boolean).map((customer) => ({ id: customer.id, name: customer.name, phone: customer.phone, store: customer.store }))
+}
+
 function staffOptionsFor(roleKey) {
   const aliases = { market: 'finance', service: 'aftersales', butler: 'storeManager', director: 'storeManager', manager: 'storeManager', cardConsultant: 'finance', beautyConsultant: 'finance' }
   const effectiveRole = props.staffOptions.some((employee) => employee.roleKey === roleKey) ? roleKey : aliases[roleKey]
@@ -416,6 +537,7 @@ function openInvite(record) { editingId.value = record.id; Object.assign(inviteF
 async function submitInvite() {
   if (!await inviteFormRef.value?.validate().catch(() => false)) return
   const record = props.records.find((x) => x.id === editingId.value)
+  if (!record || !canProcessInvitation(record)) return ElMessage.error('无邀约处理权限')
   if (inviteForm.result === '需要改期') { inviteVisible.value = false; return openAction('reschedule', record) }
   if (inviteForm.result === '已确认到店') { record.appointmentStatus = 'confirmed'; record.status = 'floorControl' }
   if (inviteForm.result === '待确认') record.appointmentStatus = 'unconfirmed'
@@ -425,11 +547,19 @@ async function submitInvite() {
   inviteVisible.value = false
   ElMessage.success('邀约结果已同步')
 }
-function handleCommand(command, record) { if (command === 'reinvite') return reinvite(record); openAction(command, record) }
+function handleCommand(command, record) {
+  if (command === 'reinvite') return reinvite(record)
+  if (command === 'reschedule' && !canReschedule.value) return ElMessage.error('无改期权限')
+  if (command === 'cancel' && !canCancel.value) return ElMessage.error('无取消预约权限')
+  openAction(command, record)
+}
 function openAction(type, record) { actionType.value = type; editingId.value = record.id; Object.assign(actionForm, { date: record.businessDate, time: record.appointmentTime, reason: '' }); actionVisible.value = true }
 async function submitAction() {
   if (!await actionFormRef.value?.validate().catch(() => false)) return
+  if (actionType.value === 'reschedule' && !canReschedule.value) return ElMessage.error('无改期权限')
+  if (actionType.value === 'cancel' && !canCancel.value) return ElMessage.error('无取消预约权限')
   const record = props.records.find((x) => x.id === editingId.value)
+  if (!record || !canEditRecord(record)) return ElMessage.error('该预约不在当前数据范围内')
   if (actionType.value === 'reschedule') {
     const old = `${record.businessDate} ${record.appointmentTime}`
     record.businessDate = actionForm.date; record.appointmentTime = actionForm.time; record.appointmentStatus = 'pending'; record.status = 'invited'
@@ -442,7 +572,7 @@ async function submitAction() {
   }
   emit('update:records', [...props.records]); actionVisible.value = false; ElMessage.success('预约已更新')
 }
-function reinvite(record) { const from = record.status; record.status = 'floorControl'; record.appointmentStatus = 'pending'; addLog(record, '重新邀约', '取消记录已重新进入场控排诊', from, 'floorControl'); emit('update:records', [...props.records]); ElMessage.success('已重新进入场控排诊') }
+function reinvite(record) { if (!canProcessInvitation(record)) return ElMessage.error('无重新邀约权限'); const from = record.status; record.status = 'floorControl'; record.appointmentStatus = 'pending'; addLog(record, '重新邀约', '取消记录已重新进入场控排诊', from, 'floorControl'); emit('update:records', [...props.records]); ElMessage.success('已重新进入场控排诊') }
 function addLog(record, action, detail, fromStatus, toStatus, type='primary') { record.logs ||= []; record.logs.push({ id: `${record.id}-${Date.now()}`, time: nowText(), operator: `${props.roleMeta.label}·${props.roleMeta.name}`, action, detail, fromStatus, toStatus, type }) }
 function buildPackages(rows) {
   const usage = new Map()

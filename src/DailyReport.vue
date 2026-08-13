@@ -10,7 +10,7 @@
     <div class="report-list-panel">
       <div class="report-filters">
         <el-date-picker v-model="filterMonth" type="month" value-format="YYYY-MM" format="YYYY年MM月" :clearable="false" />
-        <el-select v-model="filterStore" :disabled="role !== 'admin'"><el-option v-if="role === 'admin'" label="全部门店" value="all" /><el-option v-for="store in stores" :key="store" :label="store" :value="store" /></el-select>
+        <el-select v-model="filterStore" :disabled="!canSelectMultipleStores"><el-option v-if="canSelectMultipleStores" label="全部门店" value="all" /><el-option v-for="store in accessibleStores" :key="store" :label="store" :value="store" /></el-select>
         <el-select v-model="filterStatus"><el-option label="全部状态" value="all" /><el-option label="草稿" value="draft" /><el-option label="已确认" value="confirmed" /><el-option label="已退回" value="returned" /></el-select>
         <el-button v-if="role === 'storeManager'" class="toolbar-action" type="primary" :icon="Plus" @click="openCreate">新增日报</el-button>
       </div>
@@ -96,7 +96,9 @@ const pageSize=15
 const today=()=>new Date().toISOString().slice(0,10)
 const reports=ref(JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'))
 const filterMonth=ref(today().slice(0,7))
-const filterStore=ref(props.role==='admin'?'all':props.roleMeta.store)
+const accessibleStores=computed(()=>(props.role==='admin'?props.stores:(props.roleMeta.managedStores?.length?props.roleMeta.managedStores:[props.roleMeta.store])).filter(Boolean))
+const canSelectMultipleStores=computed(()=>accessibleStores.value.length>1)
+const filterStore=ref(canSelectMultipleStores.value?'all':accessibleStores.value[0])
 const personalView=computed(()=>!['storeManager','director','admin'].includes(props.role))
 const filterStatus=ref('all')
 const currentPage=ref(1)
@@ -119,7 +121,7 @@ const metricRows=[
   {key:'average',label:'客单价',unit:'元',calculated:true},{key:'svip',label:'SVIP',manual:true},{key:'refund',label:'今日退款金额',unit:'元',manual:true}
 ]
 
-const visibleReports=computed(()=>reports.value.filter(x=>props.role==='admin'||(['storeManager','director'].includes(props.role)&&x.storeNameSnapshot===props.roleMeta.store)||(personalView.value&&x.createdBy===props.roleMeta.name)))
+const visibleReports=computed(()=>reports.value.filter(x=>props.role==='admin'||(accessibleStores.value.includes(x.storeNameSnapshot)&&(!personalView.value||x.createdBy===props.roleMeta.name))))
 const filteredReports=computed(()=>visibleReports.value.filter(x=>x.reportDate.startsWith(filterMonth.value)&&(filterStore.value==='all'||x.storeNameSnapshot===filterStore.value)&&(filterStatus.value==='all'||x.status===filterStatus.value)).sort((a,b)=>b.reportDate.localeCompare(a.reportDate)))
 const pagedReports=computed(()=>filteredReports.value.slice((currentPage.value-1)*pageSize,currentPage.value*pageSize))
 const monthReports=computed(()=>visibleReports.value.filter(x=>x.reportDate.startsWith(filterMonth.value)&&(filterStore.value==='all'||x.storeNameSnapshot===filterStore.value)))
@@ -130,11 +132,11 @@ const hasAdjustedMetrics=computed(()=>editingReport.value&&Object.values(editing
 const monthlyTotals=computed(()=>editingReport.value?calculateMonthTotals(editingReport.value):{newCash:0,returningCash:0,sales:0,returnCard:0,refund:0})
 watch(reports,value=>localStorage.setItem(STORAGE_KEY,JSON.stringify(value)),{deep:true})
 watch([filterMonth,filterStore,filterStatus],()=>currentPage.value=1)
-watch(()=>props.role,()=>{filterStore.value=props.role==='admin'?'all':props.roleMeta.store})
+watch(()=>[props.role,props.roleMeta.managedStores],()=>{filterStore.value=canSelectMultipleStores.value?'all':accessibleStores.value[0]},{deep:true})
 watch(()=>props.resetToken,()=>{reports.value=[];localStorage.removeItem(STORAGE_KEY);editorVisible.value=false;detailVisible.value=false})
 
 function recordsFor(store,date){return props.records.filter(x=>x.store===store&&x.businessDate===date)}
-function personCount(record){return record.vip2?2:1}
+function personCount(record){return 1+(Array.isArray(record.companions)?record.companions.length:(record.vip2?1:0))}
 function splitSum(rows,predicate,valueFn=personCount){const result={new:0,returning:0,total:0};rows.filter(predicate).forEach(row=>{const value=Number(valueFn(row)||0);if(row.diagnosisType==='新诊')result.new+=value;else result.returning+=value;result.total+=value});return result}
 function calculateMetrics(store,date){
   const rows=recordsFor(store,date)

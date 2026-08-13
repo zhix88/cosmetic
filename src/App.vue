@@ -52,8 +52,8 @@
       <div class="flow-legend">
         <p>标准服务流程</p>
         <ol>
-          <li v-for="(item, index) in workflowLegend" :key="item">
-            <span>{{ index + 1 }}</span>{{ item }}
+          <li v-for="(item, index) in workflowLegend" :key="item.key">
+            <span>{{ index + 1 }}</span>{{ item.label }}
           </li>
         </ol>
       </div>
@@ -70,7 +70,6 @@
             <span>{{ currentRoleMeta.name.slice(0, 1) }}</span>
             <div><strong>{{ currentRoleMeta.name }}</strong><small>{{ currentRoleMeta.label }}</small></div>
           </div>
-          <el-button :icon="QuestionFilled" plain @click="openGuide">操作指引</el-button>
           <el-button plain @click="resetData">重置演示数据</el-button>
           <el-button plain @click="logout">退出登录</el-button>
         </div>
@@ -91,9 +90,9 @@
             <el-button text type="primary" @click="selectedDate = today">回到今天</el-button>
           </div>
           <div class="filters">
-            <el-select v-model="selectedStore" placeholder="全部门店" :disabled="!hasAllStores">
-              <el-option v-if="hasAllStores" label="全部门店" value="all" />
-              <el-option v-for="store in stores" :key="store" :label="store" :value="store" />
+            <el-select v-model="selectedStore" placeholder="全部门店" :disabled="!canSelectMultipleStores">
+              <el-option v-if="canSelectMultipleStores" label="全部门店" value="all" />
+              <el-option v-for="store in accessibleStoreFilters" :key="store" :label="store" :value="store" />
             </el-select>
             <el-select v-model="diagnosisFilter" placeholder="诊疗类型">
               <el-option label="全部类型" value="all" />
@@ -103,6 +102,7 @@
             <el-input v-model="keyword" clearable placeholder="搜索顾客、电话、项目">
               <template #prefix><el-icon><Search /></el-icon></template>
             </el-input>
+            <el-button v-if="canCreateAppointment" class="workbench-appointment-button" plain type="primary" :icon="Plus" @click="openWorkbenchAppointment">新增预约</el-button>
             <el-button v-if="canBatchImport" class="workbench-import-button" type="primary" :icon="Upload" @click="batchImportVisible=true">批量导入邀约</el-button>
           </div>
         </div>
@@ -150,10 +150,9 @@
                   </el-tag>
                 </div>
                 <div class="card-body">
-                  <p><span>同行顾客</span>{{ record.vip2?.name || '—' }}</p>
+                  <p><span>同行顾客</span>{{ companionSummary(record) }}</p>
                   <p><span>预约项目</span>{{ record.estimatedProject || '待补充' }}</p>
                   <p><span>所属门店</span>{{ record.store }}</p>
-                  <p><span>当前负责人</span>{{ currentOwner(record) }}</p>
                   <p><span>操作时间</span>{{ stageOperationTime(record) }}</p>
                   <p v-if="record.status === 'followup'" class="followup-time"><span>预计回访</span>{{ record.followupDate || '待生成' }}</p>
                 </div>
@@ -280,27 +279,36 @@
       <CustomerArchive
         v-else-if="activePage === 'customers'"
         :records="scopedRecords"
+        :all-records="records"
         :role="currentRole"
         :role-meta="currentRoleMeta"
+        :data-scope="currentRoleDefinition?.dataScope || '本人'"
         :stores="stores"
         :staff-options="employees"
         :permissions="currentRoleDefinition?.permissions || {}"
         :project-catalog="projectCatalog"
+        :can-create-appointment="canCreateAppointment"
         :focus-phone="customerFocus.phone"
         :focus-request="customerFocus.request"
         @open-record="openDetail"
+        @create-appointment="openCustomerAppointment"
       />
       <AppointmentCalendar
         v-else-if="activePage === 'appointments'"
+        ref="appointmentCalendarRef"
         v-model:records="scopedRecords"
+        :all-records="records"
         :role="currentRole"
         :role-meta="currentRoleMeta"
+        :data-scope="currentRoleDefinition?.dataScope || '本人'"
         :stores="stores"
         :staff-options="employees"
         :permissions="currentRoleDefinition?.permissions || {}"
         :project-catalog="projectCatalog"
         @open-record="openDetail"
         @open-import="batchImportVisible=true"
+        @appointment-saved="handleAppointmentSaved"
+        @appointment-dialog-closed="handleAppointmentDialogClosed"
       />
       <SystemSettings
         v-else-if="activePage === 'settings'"
@@ -331,10 +339,21 @@
               <strong>{{ activeRecord.vip1.name }}</strong>
               <p>{{ maskPhone(activeRecord.vip1.phone) }}</p>
             </div>
-            <div>
-              <span>VIP2 · 同行顾客</span>
-              <strong>{{ activeRecord.vip2?.name || '无同行顾客' }}</strong>
-              <p>{{ activeRecord.vip2 ? maskPhone(activeRecord.vip2.phone) : '—' }}</p>
+            <button
+              v-for="(companion, index) in recordCompanions(activeRecord)"
+              :key="companion.id || companion.phone"
+              type="button"
+              class="customer-link-card"
+              @click="openCustomerArchive(companion)"
+            >
+              <span>同行顾客 {{ index + 1 }}</span>
+              <strong>{{ companion.name }}</strong>
+              <p>{{ maskPhone(companion.phone) }} <small>查看顾客详情 →</small></p>
+            </button>
+            <div v-if="!recordCompanions(activeRecord).length" class="empty-companion-card">
+              <span>同行顾客</span>
+              <strong>无同行顾客</strong>
+              <p>—</p>
             </div>
           </div>
         </div>
@@ -572,71 +591,6 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="guideVisible" width="900px" class="guide-dialog" :show-close="false" :close-on-click-modal="false" :close-on-press-escape="false" align-center>
-      <template #header>
-        <div class="guide-header">
-          <span class="guide-logo">医</span>
-          <div><h2>欢迎使用医美管理后台</h2><p>用几分钟了解角色切换、业务流程和主要功能</p></div>
-          <el-tag round>{{ currentRoleMeta.label }}</el-tag>
-        </div>
-      </template>
-
-      <el-steps :active="guideStep" align-center finish-status="success" class="guide-steps">
-        <el-step title="认识系统" /><el-step title="切换角色" /><el-step title="功能模块" /><el-step title="开始使用" />
-      </el-steps>
-
-      <div v-if="guideStep === 0" class="guide-page">
-        <div class="guide-welcome">
-          <section><span>1</span><div><h3>选择自己的角色</h3><p>顶部角色选择框决定可查看的数据范围和可操作的流程节点。</p></div></section>
-          <section><span>2</span><div><h3>处理本人待办</h3><p>进入工作台，按邀约、接待、分诊、排诊、服务和回访推进顾客业务。</p></div></section>
-          <section><span>3</span><div><h3>查看经营结果</h3><p>店长和管理员可通过经营看板、每日报表与成交报表掌握门店情况。</p></div></section>
-        </div>
-        <el-alert title="当前是本地演示原型，数据仅保存在本机浏览器中。" type="info" :closable="false" show-icon />
-      </div>
-
-      <div v-else-if="guideStep === 1" class="guide-page">
-        <div class="guide-role-pointer" :style="guidePointerStyle">
-          <span>角色切换入口</span>
-          <i></i>
-          <strong>点击顶栏右侧的角色选择框</strong>
-        </div>
-        <div class="guide-role-tip"><el-icon><Switch /></el-icon><div><h3>在页面右上角切换角色</h3><p>选择角色后，侧栏模块、待办数量、门店范围和操作按钮会自动变化。</p></div></div>
-        <div class="guide-role-grid">
-          <article v-for="item in guideRoles" :key="item.value" :class="{ active: item.value === currentRole }" @click="currentRole = item.value">
-            <span>{{ item.name.slice(0, 1) }}</span><div><strong>{{ item.label }}</strong><p>{{ item.guide }}</p></div><el-tag v-if="item.value === currentRole" size="small">当前</el-tag>
-          </article>
-        </div>
-      </div>
-
-      <div v-else-if="guideStep === 2" class="guide-page">
-        <div class="guide-module-grid">
-          <article v-for="item in visibleGuideModules" :key="item.key">
-            <span><el-icon><component :is="item.icon" /></el-icon></span>
-            <div><h3>{{ item.label }}</h3><p>{{ item.description }}</p><small>{{ item.tip }}</small></div>
-          </article>
-        </div>
-      </div>
-
-      <div v-else class="guide-page">
-        <div class="guide-flow">
-          <h3>顾客服务标准流程</h3>
-          <div><span v-for="(item,index) in guideFlow" :key="item.label"><b>{{ index+1 }}</b><strong>{{ item.label }}</strong><small>{{ item.owner }}</small></span></div>
-        </div>
-        <div class="guide-start-cards">
-          <button @click="finishGuide('workbench')"><el-icon><Monitor /></el-icon><strong>进入工作台</strong><small>查看并处理当前待办</small></button>
-          <button @click="finishGuide('appointments')"><el-icon><Calendar /></el-icon><strong>查看预约</strong><small>了解今日到店安排</small></button>
-          <button @click="finishGuide('customers')"><el-icon><User /></el-icon><strong>查看顾客档案</strong><small>查询顾客资料与资产</small></button>
-        </div>
-      </div>
-
-      <template #footer>
-        <div class="guide-footer">
-          <el-checkbox v-model="hideGuideNextTime">下次不再自动显示</el-checkbox>
-          <div><el-button v-if="guideStep > 0" @click="guideStep--">上一步</el-button><el-button v-if="guideStep < 3" type="primary" @click="guideStep++">下一步</el-button><el-button v-else type="primary" @click="finishGuide('workbench')">开始使用</el-button></div>
-        </div>
-      </template>
-    </el-dialog>
-
     <BatchAppointmentImport
       v-model="batchImportVisible"
       :records="records"
@@ -655,7 +609,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import {
   ArrowDown, ArrowLeft, ArrowRight, Bell, Calendar, DataAnalysis, List,
   Money, Monitor, Search, User, Warning, Document, TrendCharts,
-  Setting, QuestionFilled, Switch, Upload
+  Setting, Upload, Plus
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BusinessDashboard from './BusinessDashboard.vue'
@@ -666,12 +620,13 @@ import DailyReport from './DailyReport.vue'
 import DealReport from './DealReport.vue'
 import BatchAppointmentImport from './BatchAppointmentImport.vue'
 import LoginView from './LoginView.vue'
+import { canUseBatchImportInvitation, grantDemoCrudPermissions } from './demoPermissions.js'
+import { DEFAULT_WORKFLOW_NODES, buildWorkflowTransitions, normalizeWorkflowNodes, synchronizeDemoSettings } from './settingsStorage.js'
 
 const STORAGE_KEY = 'cosmetic-workbench-v2'
 const SHARED_WORKBENCH_API = '/api/shared-workbench'
 const today = new Date().toISOString().slice(0, 10)
 const CONFIG_KEY = 'cosmetic-system-config-v1'
-const GUIDE_KEY = 'cosmetic-guide-seen-v1'
 const SETTINGS_KEY = 'cosmetic-settings-data-v1'
 const AUTH_KEY = 'cosmetic-login-session-v1'
 // 演示站会复用浏览器中既有的本地数据。历史版本或手动修改过的数据
@@ -687,9 +642,22 @@ function readLocalJson(key, fallback = null) {
   }
 }
 
-const savedConfig = readLocalJson(CONFIG_KEY)
-const stores = reactive(savedConfig?.stores || ['科臻澳总店', '金水形象店', '东区旗舰店'])
-const departments = reactive(savedConfig?.departments || ['皮肤管理科', '微整注射科', '抗衰中心', '形体管理科', '私密护理科'])
+const DEMO_CONFIG_REVISION = '2026-08-13.1'
+const cachedSettings = readLocalJson(SETTINGS_KEY)
+const shouldRefreshDemoConfiguration = cachedSettings?.demoConfigRevision !== DEMO_CONFIG_REVISION
+if (shouldRefreshDemoConfiguration) localStorage.removeItem(CONFIG_KEY)
+const defaultOrgRegions = [
+  { id: 'region-central', name: '华中区域', stores: [
+    { id: 'store-main', name: '科臻澳总店', manager: '王晓歌', phone: '0371-88880001', address: '郑州市金水区示范路88号', departments: ['市场部', '客服部', '管家部', '抗衰中心', '皮肤管理科', '私密护理科'], status: 'active' },
+    { id: 'store-jinshui', name: '金水形象店', manager: '林经理', phone: '0371-88880002', address: '郑州市金水区商务路16号', departments: ['市场部', '客服部', '皮肤管理科'], status: 'active' }
+  ] },
+  { id: 'region-east', name: '东区区域', stores: [
+    { id: 'store-east', name: '东区旗舰店', manager: '许经理', phone: '0371-88880003', address: '郑州市郑东新区商务外环路9号', departments: ['市场部', '客服部', '微整注射科', '形体管理科'], status: 'active' }
+  ] }
+]
+const savedConfig = shouldRefreshDemoConfiguration ? null : readLocalJson(CONFIG_KEY)
+const stores = reactive(savedConfig?.stores || defaultOrgRegions.flatMap((region) => region.stores.filter((store) => store.status === 'active').map((store) => store.name)))
+const departments = reactive(savedConfig?.departments || [...new Set(defaultOrgRegions.flatMap((region) => region.stores.flatMap((store) => store.departments)))])
 const projectCatalog = reactive(savedConfig?.projectCatalog || [
   { label: '皮肤护理', options: ['面部护理', '补水保湿', '光子嫩肤', '祛斑管理', '痘肌管理', '敏感肌修护'] },
   { label: '抗衰祛皱', options: ['祛皱纹', '面部抗衰', '眼周年轻化', '轮廓提升', '胶原焕活'] },
@@ -697,7 +665,7 @@ const projectCatalog = reactive(savedConfig?.projectCatalog || [
   { label: '身体护理', options: ['形体管理', '私密护理', '术后护理'] }
 ])
 const allProjects = computed(() => projectCatalog.flatMap((group) => group.options))
-const workflowLegend = ['批量导入', '场控排诊', '确认到店', '医生排诊', '服务执行', '顾客回访']
+
 
 const demoStaffRoster = [
   ['10001', '王晓歌', '科臻澳总店', '院长', 'storeManager'],
@@ -719,60 +687,50 @@ const virtualStaffRoster = [
   ['10014', '小医', '科臻澳总店', '医生', 'doctor']
 ]
 const allDemoStaffRoster = [...demoStaffRoster, ...virtualStaffRoster]
-const defaultEmployees = allDemoStaffRoster.map(([code,name,store,roleLabel,roleKey])=>({code,name,store,roleLabel,roleKey,status:'active',label:roleLabel}))
+const demoDepartmentByRole = { storeManager: '管理部', floorControl: '管家部', headNurse: '皮肤管理科', aftersales: '客服部', finance: '管理部', admin: '平台管理', market: '市场部', cardConsultant: '客户管理部', beautyConsultant: '运营部', consultant: '客服部', butler: '管家部', manager: '管理部', director: '抗衰中心', doctor: '皮肤管理科' }
+const defaultEmployees = allDemoStaffRoster.map(([code,name,store,roleLabel,roleKey])=>({code,name,store,department: demoDepartmentByRole[roleKey] || '管理部',roleLabel,roleKey,status:'active',label:roleLabel,secondaryStores:[]}))
 const defaultRoles = [
   ['market','市场','本人'],['service','客服','本人'],['butler','管家','本人'],['cardConsultant','卡姐','本人'],['beautyConsultant','美导','本人'],['manager','经理','本人'],['floorControl','场控','本店'],['headNurse','护士长','本店'],['finance','财务','本店'],['aftersales','售后','本人'],['consultant','咨询','本人'],['director','总监','本店'],['doctor','医生','本人'],['nurse','护士','本人'],['storeManager','院长','本店'],['admin','admin','全部门店']
-].map(([key,label,dataScope])=>({key,label,dataScope,permissions:{workbench:['view','edit'],customers:['view'],appointments:['view'],dashboard:['view','export'],dailyReports:['view','export'],dealReports:['view','export'],...(key==='storeManager'?{settings:['view','edit']}:{}),...(key==='admin'?{settings:['view','edit']}: {})}}))
-const savedSettings = readLocalJson(SETTINGS_KEY)
-const employees = ref(ensureAdminEmployee(savedSettings?.staff || defaultEmployees))
-const roleDefinitions = ref(ensureReportPermissions(savedSettings?.roles || defaultRoles))
+].map(([key,label,dataScope])=>({key,label,dataScope,permissions:grantDemoCrudPermissions({workbench:['view','edit'],customers:['view'],appointments:['view'],dashboard:['view','export'],dailyReports:['view','export'],dealReports:['view','export'],...(key==='storeManager'?{settings:['view','edit']}:{}),...(key==='admin'?{settings:['view','edit']}: {})})}))
+const demoSettingsSync = synchronizeDemoSettings(cachedSettings, {
+  revision: DEMO_CONFIG_REVISION,
+  orgRegions: defaultOrgRegions,
+  staff: defaultEmployees,
+  roles: defaultRoles,
+  workflowNodes: DEFAULT_WORKFLOW_NODES
+})
+const savedSettings = demoSettingsSync.settings
+if (demoSettingsSync.updated) localStorage.setItem(SETTINGS_KEY, JSON.stringify(savedSettings))
+const employees = ref(ensureAdminEmployee(savedSettings.staff || defaultEmployees))
+const roleDefinitions = ref(ensureReportPermissions(savedSettings.roles || defaultRoles))
 const roles = computed(() => employees.value.map((employee) => ({ value: employee.roleKey, label: employee.roleLabel || employee.roleKey, name: employee.name, store: employee.store })))
-const guideRoles = roles.value.map((role) => ({
-  ...role,
-  guide: {
-    market: '负责顾客邀约和预约确认',
-    service: '负责顾客接待与服务后回访',
-    butler: '负责到店顾客需求分诊',
-    director: '负责排诊、服务推进与成交分析',
-    storeManager: '管理本店业务、日报和经营数据',
-    admin: '查看全部门店并维护系统配置'
-  }[role.value]
-}))
-const guideModules = [
-  { key:'workbench',label:'工作台',icon:Monitor,description:'集中查看顾客业务进度和本人待办。',tip:'日常工作从这里开始' },
-  { key:'customers',label:'顾客档案',icon:User,description:'维护顾客资料、偏好、项目资产、储值积分和照片。',tip:'沉淀完整顾客历史' },
-  { key:'appointments',label:'预约记录',icon:Calendar,description:'通过月历查看预约，支持新增、邀约、改期和取消。',tip:'安排每日到店计划' },
-  { key:'dashboard',label:'经营看板',icon:DataAnalysis,description:'查看业务进度、转化漏斗、经营趋势和排行。',tip:'店长和管理员可见',roles:['storeManager','admin'] },
-  { key:'dailyReports',label:'每日报表',icon:Document,description:'自动汇总门店每日经营数据，由店长核对确认。',tip:'支持审核和Excel导出',roles:['storeManager','admin'] },
-  { key:'dealReports',label:'成交报表',icon:TrendCharts,description:'按日期、门店、人员岗位分析成交表现。',tip:'全员可按权限查看',roles:['market','service','butler','director','storeManager','admin'] },
-  { key:'settings',label:'系统设置',icon:Setting,description:'维护组织、员工、项目、耗材、权限和业务规则。',tip:'店长和管理员可见',roles:['storeManager','admin'] }
-]
-const guideFlow = [
-  {label:'市场邀约',owner:'市场'},{label:'客服接待',owner:'客服'},{label:'管家分诊',owner:'管家'},
-  {label:'总监排诊',owner:'总监'},{label:'服务执行',owner:'总监'},{label:'客服回访',owner:'客服'}
-]
-
-const statusMeta = {
-  floorControl: { label: '场控排诊', type: 'warning', owner: 'floorControl' },
-  arrivalConfirmation: { label: '确认到店', type: 'info', owner: 'floorControl' },
-  doctorDiagnosis: { label: '医生排诊', type: 'primary', owner: 'doctor' },
-  service: { label: '服务执行', type: 'success', owner: 'director' },
-  followup: { label: '顾客回访', type: 'success', owner: 'service' },
-  completed: { label: '服务完成', type: 'info', owner: null },
-  cancelled: { label: '服务取消', type: 'danger', owner: null }
-}
-
-const statusTabs = [
+const workflowNodes = ref(normalizeWorkflowNodes(savedSettings?.workflowNodes))
+const statusMeta = reactive({})
+const nextStatus = reactive({})
+const previousStatus = reactive({})
+const statusTabs = computed(() => [
   { value: 'all', label: '全部' },
-  ...Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))
-]
+  ...workflowNodes.value.map((node) => ({ value: node.key, label: node.label }))
+])
 
-const nextStatus = {
-  floorControl: 'arrivalConfirmation', arrivalConfirmation: 'doctorDiagnosis', doctorDiagnosis: 'service', service: 'followup', followup: 'completed'
+function applyWorkflowConfig(value) {
+  const normalized = normalizeWorkflowNodes(value)
+  workflowNodes.value = normalized
+  const transitions = buildWorkflowTransitions(normalized)
+  Object.keys(statusMeta).forEach((key) => delete statusMeta[key])
+  normalized.forEach((node) => {
+    statusMeta[node.key] = { label: node.label, type: node.type, owner: node.ownerKey }
+  })
+  Object.keys(nextStatus).forEach((key) => delete nextStatus[key])
+  Object.keys(previousStatus).forEach((key) => delete previousStatus[key])
+  Object.assign(nextStatus, transitions.next)
+  Object.assign(previousStatus, transitions.previous)
 }
-const previousStatus = {
-  arrivalConfirmation: 'floorControl', doctorDiagnosis: 'arrivalConfirmation', service: 'doctorDiagnosis', followup: 'service', completed: 'followup'
-}
+applyWorkflowConfig(workflowNodes.value)
+const workflowLegend = computed(() => [
+  { key: 'batchImport', label: '批量导入' },
+  ...workflowNodes.value.map((node) => ({ key: node.key, label: node.label }))
+])
 
 const savedSession = readLocalJson(AUTH_KEY)
 const currentUser = ref(employees.value.find((item) => item.code === savedSession?.code && item.status === 'active') || null)
@@ -798,14 +756,11 @@ const commonFormRef = ref()
 const commonAction = ref('')
 const editingRecordId = ref(null)
 const dataResetToken = ref(0)
-const guideVisible = ref(false)
-const guideStep = ref(0)
-const hideGuideNextTime = ref(true)
-const roleSelectRef = ref()
-const guidePointerStyle = ref({})
 const batchImportVisible = ref(false)
-const canBatchImport = computed(() => ['market','storeManager','admin'].includes(currentRole.value))
-const visibleGuideModules = computed(() => guideModules.filter((item) => !item.roles || item.roles.includes(currentRole.value)))
+const appointmentCalendarRef = ref()
+const appointmentDialogReturnPage = ref('')
+const appointmentReturnCustomerPhone = ref('')
+const canBatchImport = computed(() => canUseBatchImportInvitation(currentRoleDefinition.value?.permissions, currentRole.value === 'admin'))
 
 const nodeForm = reactive({})
 const commonForm = reactive({})
@@ -833,12 +788,19 @@ const nodeRules = {
   projects: [{ required: true, type: 'array', min: 1, message: '请至少选择一个顾客项目', trigger: 'change' }],
   method: [{ required: true, message: '请选择回访方式', trigger: 'change' }],
   satisfaction: [{ required: true, message: '请填写满意度', trigger: 'change' }],
-  note: [{ required: true, message: '请填写处理记录', trigger: 'blur' }]
+  note: [{
+    validator: (_rule, value, callback) => {
+      if (dialogStatus.value === 'followup' && !String(value || '').trim()) callback(new Error('请填写回访记录'))
+      else if (dialogStatus.value === 'reception' && !String(value || '').trim()) callback(new Error('请填写顾客诉求'))
+      else callback()
+    },
+    trigger: 'blur'
+  }]
 }
 const commonRules = {
   date: [{ required: true, message: '请选择日期', trigger: 'change' }],
   time: [{ required: true, message: '请选择时间', trigger: 'change' }],
-  reason: [{ required: true, message: '请填写原因或备注', trigger: 'blur' }],
+
   paymentType: [{ required: true, message: '请选择消费方式', trigger: 'change' }],
   projects: [{ required: true, type: 'array', min: 1, message: '请至少选择一个消费项目', trigger: 'change' }],
   cardAmount: [{
@@ -977,8 +939,9 @@ let lastSharedTaskSignature = taskSignature(records.value)
 const currentRoleMeta = computed(() => {
   if (!currentUser.value) return { name: '未登录', label: '', roleLabel: '', store: '', managedStores: [] }
   const definition = roleDefinitions.value.find((item) => item.key === currentUser.value.roleKey)
-  const managedStores = definition?.dataScope === '指定门店' ? (definition.authorizedStores || []) : [currentUser.value.store]
-  return { ...currentUser.value, label: currentUser.value.roleLabel || currentUser.value.roleKey, managedStores: managedStores.filter(Boolean) }
+  const dataScope = definition?.dataScope || '本人'
+  const managedStores = dataScope === '全部门店' ? stores : dataScope === '指定门店' ? (definition.authorizedStores || []) : [currentUser.value.store]
+  return { ...currentUser.value, label: currentUser.value.roleLabel || currentUser.value.roleKey, dataScope, managedStores: managedStores.filter(Boolean) }
 })
 const pageHeader = computed(() => ({
   workbench: { title: '顾客业务维护工作台', subtitle: '按角色处理本人任务，全店进度实时可见' },
@@ -990,6 +953,15 @@ const pageHeader = computed(() => ({
   ,settings: { title: '系统设置', subtitle: '统一维护组织、人员、项目、权限与耗材库存' }
 }[activePage.value] || { title: '医美管理后台', subtitle: '顾客全流程协作' }))
 const currentRoleDefinition = computed(() => roleDefinitions.value.find((item) => item.key === currentRole.value))
+function hasConfiguredPermission(path, action = 'operate') {
+  if (currentRole.value === 'admin') return true
+  const permissions = currentRoleDefinition.value?.permissions || {}
+  const direct = permissions[path]
+  if (Array.isArray(direct)) return direct.includes(action) || direct.includes('operate')
+  const rootActions = permissions[path.split('.')[0]]
+  return Array.isArray(rootActions) && (rootActions.includes(action) || rootActions.includes('operate'))
+}
+const canCreateAppointment = computed(() => hasConfiguredPermission('appointments.appointmentList.point1', 'operate'))
 const canView = (module) => {
   if (currentRole.value === 'admin') return true
   const permissions = currentRoleDefinition.value?.permissions || {}
@@ -1000,7 +972,8 @@ const canViewDashboard = computed(() => canView('dashboard'))
 const canViewDailyReports = computed(() => canView('dailyReports'))
 const canViewDealReports = computed(() => canView('dealReports'))
 const canViewSettings = computed(() => ['storeManager', 'admin'].includes(currentRole.value) && canView('settings'))
-const hasAllStores = computed(() => currentRole.value === 'admin' || currentRoleDefinition.value?.dataScope === '全部门店')
+const accessibleStoreFilters = computed(() => currentRole.value === 'admin' ? [...stores] : (currentRoleMeta.value.managedStores?.length ? currentRoleMeta.value.managedStores : [currentRoleMeta.value.store]).filter(Boolean))
+const canSelectMultipleStores = computed(() => accessibleStoreFilters.value.length > 1)
 const roleAssignmentKeys = {
   aftersales: ['aftersales', 'aftercare', 'service'],
   headNurse: ['headNurse', 'nurse']
@@ -1017,12 +990,22 @@ function roleOwnsWorkflow(role, workflowRole) {
   return role === workflowRole || (role === 'aftersales' && workflowRole === 'service')
 }
 function recordInScope(record) {
-  if (currentRole.value === 'admin') return true
-  if (currentRoleDefinition.value?.dataScope === '指定门店') return currentRoleMeta.value.managedStores.includes(record.store)
-  if (['storeManager', 'director'].includes(currentRole.value)) return currentRoleMeta.value.managedStores.includes(record.store)
-  return hasRecordAssignment(record, currentRole.value, currentRoleMeta.value.name)
+  const dataScope = currentRoleDefinition.value?.dataScope || '本人'
+  if (currentRole.value === 'admin' || dataScope === '全部门店') return true
+  if (['本店', '指定门店'].includes(dataScope)) return currentRoleMeta.value.managedStores.includes(record.store)
+  return record.createdBy?.name === currentRoleMeta.value.name || hasRecordAssignment(record, currentRole.value, currentRoleMeta.value.name)
 }
-const scopedRecords = computed({ get: () => records.value.filter(recordInScope), set: (value) => { records.value = value.map(normalizeRecord) } })
+const scopedRecords = computed({
+  get: () => records.value.filter(recordInScope),
+  set: (value) => {
+    const incoming = new Map(value.map((record) => [record.id, normalizeRecord(record)]))
+    const existingIds = new Set(records.value.map((record) => record.id))
+    records.value = [
+      ...records.value.map((record) => incoming.get(record.id) || record),
+      ...[...incoming.values()].filter((record) => !existingIds.has(record.id))
+    ]
+  }
+})
 const dashboardRecords = computed(() => [...historicalRecords, ...records.value].filter(recordInScope))
 const activeRecord = computed(() => dashboardRecords.value.find((x) => x.id === activeRecordId.value))
 const dayRecords = computed(() => records.value.filter((x) => {
@@ -1047,7 +1030,7 @@ const filteredRecords = computed(() => {
     if (diagnosisFilter.value !== 'all' && record.diagnosisType !== diagnosisFilter.value) return false
     if (viewMode.value === 'mine' && !canOperate(record)) return false
     if (!q) return true
-    return [record.vip1.name, record.vip1.phone, record.vip2?.name, record.vip2?.phone, record.estimatedProject]
+    return [...recordPeople(record).flatMap((person) => [person.name, person.phone]), record.estimatedProject]
       .some((value) => String(value || '').toLowerCase().includes(q))
   })
 })
@@ -1088,23 +1071,15 @@ watch(currentRole, () => {
   if (!canViewDailyReports.value && activePage.value === 'dailyReports') activePage.value = 'workbench'
   if (!canViewDealReports.value && activePage.value === 'dealReports') activePage.value = 'workbench'
   if (!canViewSettings.value && activePage.value === 'settings') activePage.value = 'workbench'
-  if (!hasAllStores.value) selectedStore.value = currentRoleMeta.value.managedStores.length > 1 ? 'all' : currentRoleMeta.value.managedStores[0]
-})
+  selectedStore.value = canSelectMultipleStores.value ? 'all' : accessibleStoreFilters.value[0]
+}, { immediate: true })
 watch([selectedDate, selectedStore, diagnosisFilter, keyword, activeStatus, viewMode], () => { currentPage.value = 1 })
-watch([guideVisible, guideStep], async () => {
-  if (!guideVisible.value || guideStep.value !== 1) return
-  await nextTick()
-  positionGuidePointer()
-})
-
 onMounted(() => {
-  window.addEventListener('resize', positionGuidePointer)
   window.addEventListener('storage', syncExternalTaskRecords)
   void (async () => { await pushSharedWorkbench(records.value); await pullSharedWorkbench() })()
   sharedWorkbenchTimer = window.setInterval(() => { void pullSharedWorkbench() }, 1500)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', positionGuidePointer)
   window.removeEventListener('storage', syncExternalTaskRecords)
   window.clearInterval(sharedWorkbenchTimer)
 })
@@ -1148,17 +1123,10 @@ function syncExternalTaskRecords(event) {
   }
 }
 
-function openGuide() {
-  guideStep.value = 0
-  hideGuideNextTime.value = true
-  guideVisible.value = true
-}
-
 function handleLogin(employee) {
   currentUser.value = employee
   currentRole.value = employee.roleKey
-  const definition = roleDefinitions.value.find((item) => item.key === employee.roleKey)
-  selectedStore.value = employee.roleKey === 'admin' || definition?.dataScope === '指定门店' && (definition.authorizedStores || []).length > 1 ? 'all' : (definition?.dataScope === '指定门店' ? definition.authorizedStores[0] : employee.store)
+  selectedStore.value = canSelectMultipleStores.value ? 'all' : accessibleStoreFilters.value[0]
   activePage.value = 'workbench'
   localStorage.setItem(AUTH_KEY, JSON.stringify({ code: employee.code }))
 }
@@ -1168,23 +1136,6 @@ function logout() {
   currentUser.value = null
   currentRole.value = ''
   activePage.value = 'workbench'
-}
-
-function positionGuidePointer() {
-  const element = roleSelectRef.value?.$el
-  if (!element) return
-  const rect = element.getBoundingClientRect()
-  guidePointerStyle.value = {
-    top: `${rect.bottom + 14}px`,
-    left: `${rect.left + rect.width / 2}px`
-  }
-}
-
-function finishGuide(page = 'workbench') {
-  if (hideGuideNextTime.value) localStorage.setItem(GUIDE_KEY, 'seen')
-  else localStorage.removeItem(GUIDE_KEY)
-  activePage.value = page
-  guideVisible.value = false
 }
 
 function handleBatchImported(imported) {
@@ -1213,11 +1164,6 @@ function canRollback(record) {
   return canManage(record) && Boolean(previousStatus[record.status])
 }
 
-function baseCurrentOwner(record) {
-  const role = statusMeta[record.status]?.owner
-  if (!role) return record.status === 'completed' ? '流程已结束' : '无'
-  return record.assignments[role] || '待分配'
-}
 
 function countByStatus(status) {
   const source = status === 'all' ? dayRecords.value : dayRecords.value.filter((x) => x.status === status)
@@ -1232,12 +1178,86 @@ function actionLabel(status) {
   }[status] || '处理'
 }
 
+function recordCompanions(record) {
+  const source = Array.isArray(record?.companions) ? record.companions : [record?.vip2].filter(Boolean)
+  const seen = new Set()
+  return source.filter((person) => {
+    if (!person) return false
+    const key = normalizePhone(person.phone) || person.id || person.name
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function recordPeople(record) {
+  return [record?.vip1, ...recordCompanions(record)].filter(Boolean)
+}
+
+function companionSummary(record) {
+  const companions = recordCompanions(record)
+  if (!companions.length) return '—'
+  const names = companions.slice(0, 2).map((person) => person.name).join('、')
+  return companions.length > 2 ? `${names} 等${companions.length}人` : names
+}
+
 function openDetail(record) {
   activeRecordId.value = record.id
   detailVisible.value = true
 }
 
+function openCustomerArchive(person) {
+  if (!person?.phone) return
+  detailVisible.value = false
+  customerFocus.phone = normalizePhone(person.phone)
+  customerFocus.request += 1
+  activePage.value = 'customers'
+}
+
+async function openAppointmentDialog({ date = selectedDate.value, store = '', customer = null } = {}) {
+  appointmentDialogReturnPage.value = activePage.value
+  activePage.value = 'appointments'
+  await nextTick()
+  if (!appointmentCalendarRef.value) {
+    activePage.value = appointmentDialogReturnPage.value || 'workbench'
+    appointmentDialogReturnPage.value = ''
+    ElMessage.error('新增预约窗口打开失败，请稍后重试')
+    return
+  }
+  appointmentCalendarRef.value.openCreate(date, store, customer)
+}
+
+function openWorkbenchAppointment() {
+  appointmentReturnCustomerPhone.value = ''
+  return openAppointmentDialog({ store: selectedStore.value === 'all' ? '' : selectedStore.value })
+}
+
+function openCustomerAppointment(customer) {
+  if (!customer) return
+  appointmentReturnCustomerPhone.value = normalizePhone(customer.phone)
+  return openAppointmentDialog({ date: today, store: customer.store, customer })
+}
+
+function handleAppointmentSaved(record) {
+  if (appointmentDialogReturnPage.value && record?.businessDate) selectedDate.value = record.businessDate
+}
+
+async function handleAppointmentDialogClosed() {
+  if (!appointmentDialogReturnPage.value) return
+  const returnPage = appointmentDialogReturnPage.value
+  appointmentDialogReturnPage.value = ''
+  activePage.value = returnPage
+  if (returnPage === 'customers' && appointmentReturnCustomerPhone.value) {
+    const phone = appointmentReturnCustomerPhone.value
+    appointmentReturnCustomerPhone.value = ''
+    await nextTick()
+    customerFocus.phone = phone
+    customerFocus.request += 1
+  }
+}
+
 function handleConfigChange(config) {
+  if (config.workflowNodes) applyWorkflowConfig(config.workflowNodes)
   const previousStaff = new Map(employees.value.map((employee) => [employee.code, employee.name]))
   const renamedStaff = new Map((config.staff || []).filter((employee) => previousStaff.has(employee.code)).map((employee) => [previousStaff.get(employee.code), employee.name]))
   if (renamedStaff.size) {
@@ -1273,14 +1293,9 @@ function ensureAdminEmployee(rows) {
   return normalized
 }
 
-function currentOwner(record) {
-  const value = baseCurrentOwner(record)
-  const employee = employees.value.find((candidate) => candidate.name === value)
-  return employee && employee.status !== 'active' ? `${value}（已停用，待重新分配）` : value
-}
 
 function projectFollowupDays(projectName) {
-  const settings = JSON.parse(localStorage.getItem('cosmetic-settings-data-v1') || 'null')
+  const settings = readLocalJson(SETTINGS_KEY)
   return Number(settings?.projects?.find((item) => item.name === projectName)?.followupDays || 60)
 }
 
@@ -1302,7 +1317,7 @@ function ensureReportPermissions(rows) {
   normalized.forEach((role) => { if (role.key === 'doctor' || role.label === 'doctor') role.label = '医生' })
   defaultRoles.forEach((role) => { if (!normalized.some((item) => item.key === role.key || item.label === role.label)) normalized.push(JSON.parse(JSON.stringify(role))) })
   return normalized.map((role) => {
-    const permissions = JSON.parse(JSON.stringify(role.permissions || {}))
+    let permissions = grantDemoCrudPermissions(role.permissions || {})
     ;['dashboard', 'dailyReports', 'dealReports'].forEach((key) => {
       if (!permissions[key]) permissions[key] = ['view', 'export']
       else if (!permissions[key].includes('view')) permissions[key].push('view')
@@ -1403,7 +1418,7 @@ async function submitNode() {
   if (from === 'followup' && ['需再次跟进', '投诉待处理'].includes(nodeForm.result)) {
     record.flags.push(nodeForm.result)
   }
-  if (from === 'followup') record.completedDate = selectedDate.value
+  if (to === 'completed') record.completedDate = selectedDate.value
   record.note = nodeForm.note || record.note
   record.projects = [...nodeForm.projects]
   record.estimatedProject = nodeForm.projects.join('、')
@@ -1552,8 +1567,12 @@ function formatMoney(value) {
   return Number(value || 0).toLocaleString('zh-CN')
 }
 
+function normalizePhone(phone) {
+  return String(phone || '').replace(/\D/g, '')
+}
+
 function maskPhone(phone) {
-  return phone ? phone.replace(/^(\d{3})\d{4}(\d{4})$/, '$1****$2') : '—'
+  return phone ? String(phone).replace(/^(\d{3})\d{4}(\d{4})$/, '$1****$2') : '—'
 }
 
 function paymentLabel(record) {
@@ -1565,8 +1584,8 @@ function paymentLabel(record) {
 }
 
 function consumeProjectMaterials(record, selectedProjects) {
-  const settings = JSON.parse(localStorage.getItem('cosmetic-settings-data-v1') || 'null')
-  const inventory = JSON.parse(localStorage.getItem('cosmetic-inventory-data-v1') || 'null')
+  const settings = readLocalJson(SETTINGS_KEY)
+  const inventory = readLocalJson('cosmetic-inventory-data-v1')
   if (!settings?.projects || !inventory?.materials || !inventory?.batches || !inventory?.materialTemplates) return { ok: true }
   const requirements = new Map()
   selectedProjects.forEach((projectName) => {
@@ -1676,8 +1695,11 @@ function normalizeRecord(record) {
   const nurseName = (record.id || '').length % 2 ? '张璐' : '洋洋'
   const ownerMap = { market: '虚拟市场专员', service: '舒婷', butler: '林悦', director: '陈楠', manager: '赵阳', floorControl: '娜娜', consultant: '小咨', doctor: '小医', nurse: nurseName, cardConsultant: '虚拟卡姐', beautyConsultant: '虚拟美导' }
   const migratedAssignments = Object.fromEntries(Object.entries({ ...(record.assignments || {}) }).map(([key, value]) => [key, ownerMap[key] || value]))
+  const companions = recordCompanions(record).map((person) => ({ ...person, phone: normalizePhone(person.phone) }))
   const normalized = {
     ...record,
+    companions,
+    vip2: companions[0] || null,
     status: legacyStatus[record.status] || record.status,
     projects: record.projects?.length ? record.projects : [record.estimatedProject].filter(Boolean),
     cardAmount: Number(record.cardAmount || 0),

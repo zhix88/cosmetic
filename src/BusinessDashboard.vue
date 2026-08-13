@@ -2,9 +2,9 @@
   <section class="dashboard-page">
     <div class="dashboard-filter-bar">
       <div class="dashboard-filters">
-        <el-select v-model="selectedStore" :disabled="role !== 'admin'">
-          <el-option v-if="role === 'admin'" label="全部门店" value="all" />
-          <el-option v-for="store in stores" :key="store" :label="store" :value="store" />
+        <el-select v-model="selectedStore" :disabled="!canSelectMultipleStores">
+          <el-option v-if="canSelectMultipleStores" label="全部门店" value="all" />
+          <el-option v-for="store in accessibleStores" :key="store" :label="store" :value="store" />
         </el-select>
         <el-radio-group v-model="period" size="small">
           <el-radio-button value="today">今日</el-radio-button>
@@ -190,7 +190,11 @@ const props = defineProps({
 })
 defineEmits(['open-record'])
 
-const selectedStore = ref(props.role === 'admin' ? 'all' : props.roleMeta.store)
+const accessibleStores = computed(() => (props.role === 'admin'
+  ? props.stores
+  : (props.roleMeta.managedStores?.length ? props.roleMeta.managedStores : [props.roleMeta.store])).filter(Boolean))
+const canSelectMultipleStores = computed(() => accessibleStores.value.length > 1)
+const selectedStore = ref(canSelectMultipleStores.value ? 'all' : accessibleStores.value[0])
 const period = ref('month')
 const customRange = ref([monthStart(), today()])
 const rankingType = ref(props.role === 'admin' ? 'store' : 'staff')
@@ -315,10 +319,10 @@ const insights = computed(() => [
   { title: '未成交到店', description: '已到店但暂无现金或耗卡记录', value: `${scopedRecords.value.filter((x) => reached(x, 'reception') && !recordAmount(x) && x.status !== 'cancelled').length}人`, tone: 'info', icon: '转', filter: (x) => reached(x, 'reception') && !recordAmount(x) && x.status !== 'cancelled' }
 ])
 
-watch(() => props.role, () => {
-  selectedStore.value = props.role === 'admin' ? 'all' : props.roleMeta.store
+watch(() => [props.role, props.roleMeta.managedStores], () => {
+  selectedStore.value = canSelectMultipleStores.value ? 'all' : accessibleStores.value[0]
   rankingType.value = props.role === 'admin' ? 'store' : 'staff'
-})
+}, { deep: true })
 watch([scopedRecords, rankingType, rankingMetric], () => nextTick(renderCharts), { deep: true })
 
 onMounted(() => {

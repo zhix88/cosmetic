@@ -12,9 +12,9 @@
         <el-input v-model="keyword" clearable placeholder="搜索姓名或手机号">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-select v-model="storeFilter" :disabled="role !== 'admin'">
-          <el-option v-if="role === 'admin'" label="全部门店" value="all" />
-          <el-option v-for="store in stores" :key="store" :label="store" :value="store" />
+        <el-select v-model="storeFilter" :disabled="accessibleStores.length <= 1">
+          <el-option v-if="accessibleStores.length > 1" label="全部门店" value="all" />
+          <el-option v-for="store in accessibleStores" :key="store" :label="store" :value="store" />
         </el-select>
         <el-select v-model="levelFilter">
           <el-option label="全部会员等级" value="all" />
@@ -27,7 +27,7 @@
           <el-option label="全部状态" value="all" />
         </el-select>
         <el-date-picker v-model="visitRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="最近到店起" end-placeholder="最近到店止" clearable />
-        <el-button class="toolbar-action" type="primary" :icon="Plus" @click="openCustomerForm()">新增顾客</el-button>
+        <el-button v-if="canCreateCustomer" class="toolbar-action" type="primary" :icon="Plus" @click="openCustomerForm()">新增顾客</el-button>
       </div>
 
       <el-table :data="pagedCustomers" stripe @sort-change="handleSort">
@@ -59,7 +59,7 @@
         <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openCustomerDetail(row)">详情</el-button>
-            <el-button v-if="row.status !== 'deleted'" link @click="openCustomerForm(row)">编辑</el-button>
+            <el-button v-if="canEditCustomer && row.status !== 'deleted'" link @click="openCustomerForm(row)">编辑</el-button>
             <el-button v-if="canManageCustomerStatus && row.status === 'active'" link type="warning" @click="changeStatus(row, 'paused')">暂停</el-button>
             <el-button v-if="canManageCustomerStatus && row.status !== 'active'" link type="success" @click="changeStatus(row, 'active')">恢复</el-button>
             <el-button v-if="canDeleteCustomer && row.status !== 'deleted'" link type="danger" @click="removeCustomer(row)">删除</el-button>
@@ -121,7 +121,7 @@
           </el-tab-pane>
 
           <el-tab-pane label="项目资产" name="packages">
-            <div class="tab-action-row"><p>套餐次数只能通过购买或核销调整，并保留完整日志。</p><el-button v-if="canManageAssets" type="primary" @click="openPackageDialog()">购买套餐</el-button></div>
+            <div class="tab-action-row"><p>套餐次数只能通过购买或核销调整，并保留完整日志。</p><el-button v-if="canPurchasePackage" type="primary" @click="openPackageDialog()">购买套餐</el-button></div>
             <el-table :data="activeCustomer.packages" empty-text="暂无已购项目">
               <el-table-column prop="project" label="项目" min-width="150" />
               <el-table-column label="资产来源" min-width="125"><template #default="{ row }">{{ row.sourceType === 'activityPackage' ? row.packageName || '活动套餐' : '单项目次数' }}</template></el-table-column>
@@ -130,7 +130,7 @@
               <el-table-column label="剩余" width="70" align="center"><template #default="{ row }">{{ row.purchased - row.used }}</template></el-table-column>
               <el-table-column prop="amount" label="购买金额" width="105"><template #default="{ row }">¥{{ money(row.amount) }}</template></el-table-column>
               <el-table-column prop="expiry" label="有效期" width="110" />
-              <el-table-column v-if="canManageAssets" label="操作" width="82"><template #default="{ row }"><el-button link type="primary" :disabled="activeCustomer.status !== 'active' || row.used >= row.purchased" @click="openPackageDialog(row)">核销</el-button></template></el-table-column>
+              <el-table-column v-if="canPurchasePackage" label="操作" width="82"><template #default="{ row }"><el-button link type="primary" :disabled="activeCustomer.status !== 'active' || row.used >= row.purchased" @click="openPackageDialog(row)">核销</el-button></template></el-table-column>
             </el-table>
           </el-tab-pane>
 
@@ -180,13 +180,12 @@
           </el-tab-pane>
         </el-tabs>
         <div class="archive-action-footer">
-          <el-button @click="openCustomerForm(activeCustomer)">编辑资料</el-button>
-          <template v-if="canManageAssets">
-            <el-button @click="openAssetDialog('balance')">调整储值</el-button>
-            <el-button @click="openAssetDialog('points')">调整积分</el-button>
-            <el-button @click="openPackageDialog(null, 'activityPackage')">购买活动套餐</el-button>
-            <el-button type="primary" @click="openRechargeDialog">会员充值</el-button>
-          </template>
+          <el-button v-if="canCreateAppointment" plain type="primary" @click="$emit('create-appointment', activeCustomer)">新增预约</el-button>
+          <el-button v-if="canEditCustomer" @click="openCustomerForm(activeCustomer)">编辑资料</el-button>
+          <el-button v-if="canAdjustBalance" @click="openAssetDialog('balance')">调整储值</el-button>
+          <el-button v-if="canAdjustPoints" @click="openAssetDialog('points')">调整积分</el-button>
+          <el-button v-if="canPurchasePackage" @click="openPackageDialog(null)">购买项目/套餐</el-button>
+          <el-button v-if="canRecharge" type="primary" @click="openRechargeDialog">会员充值</el-button>
         </div>
       </template>
     </el-drawer>
@@ -198,7 +197,7 @@
           <el-form-item label="手机号" prop="phone"><el-input v-model="customerForm.phone" :disabled="Boolean(editingCustomerId)" /></el-form-item>
           <el-form-item label="性别"><el-select v-model="customerForm.gender"><el-option label="女" value="女" /><el-option label="男" value="男" /><el-option label="未填写" value="" /></el-select></el-form-item>
           <el-form-item label="生日"><el-date-picker v-model="customerForm.birthday" type="date" value-format="YYYY-MM-DD" /></el-form-item>
-          <el-form-item label="所属门店" prop="store"><el-select v-model="customerForm.store" :disabled="role !== 'admin'"><el-option v-for="store in stores" :key="store" :label="store" :value="store" /></el-select></el-form-item>
+          <el-form-item label="所属门店" prop="store"><el-select v-model="customerForm.store" :disabled="accessibleStores.length === 1"><el-option v-for="store in accessibleStores" :key="store" :label="store" :value="store" /></el-select></el-form-item>
           <el-form-item label="会员等级"><el-select v-model="customerForm.memberLevel"><el-option v-for="level in memberLevels" :key="level" :label="level" :value="level" /></el-select></el-form-item>
           <el-form-item label="顾客来源"><el-input v-model="customerForm.source" /></el-form-item>
           <el-form-item label="客户标签"><el-select v-model="customerForm.tags" multiple filterable allow-create default-first-option><el-option v-for="tag in ['高消费力','中消费力','潜力客户','高度满意','满意','需关注']" :key="tag" :label="tag" :value="tag" /></el-select></el-form-item>
@@ -231,7 +230,7 @@
       <template #footer><el-button @click="rechargeVisible=false">取消</el-button><el-button type="primary" @click="submitRecharge">确认充值</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="packageDialogVisible" :title="packageMode === 'purchase' ? '购买项目套餐' : '核销项目套餐'" width="540px">
+    <el-dialog v-model="packageDialogVisible" :title="packageMode === 'purchase' ? '购买项目/套餐' : '核销项目/套餐'" width="540px">
       <el-form ref="packageFormRef" :model="packageForm" :rules="packageRules" label-position="top">
         <template v-if="packageMode === 'purchase'">
           <el-form-item label="资产类型"><el-radio-group v-model="packageForm.sourceType"><el-radio-button value="singleProject">单项目次数</el-radio-button><el-radio-button value="activityPackage">活动套餐</el-radio-button></el-radio-group></el-form-item>
@@ -280,16 +279,19 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 const props = defineProps({
   records: { type: Array, required: true },
+  allRecords: { type: Array, default: () => [] },
   role: { type: String, required: true },
   roleMeta: { type: Object, required: true },
+  dataScope: { type: String, default: '本人' },
   stores: { type: Array, required: true },
   staffOptions: { type: Array, default: () => [] },
   permissions: { type: Object, default: () => ({}) },
   projectCatalog: { type: Array, required: true },
+  canCreateAppointment: { type: Boolean, default: false },
   focusPhone: { type: String, default: '' },
   focusRequest: { type: Number, default: 0 }
 })
-defineEmits(['open-record'])
+defineEmits(['open-record', 'create-appointment'])
 
 const STORAGE_KEY = 'cosmetic-customer-archive-v1'
 const memberLevels = ['普通会员', '银卡', '金卡', '铂金', '黑金']
@@ -333,7 +335,7 @@ const packageForm = reactive({})
 const photoForm = reactive({ type: 'before', project: '', date: today(), note: '', file: '' })
 const followupForm = reactive({ date: today(), method: '电话', satisfaction: '满意', spendingPower: '中消费力', nextDate: '', note: '' })
 const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-const customers = ref(mergeBusinessCustomers(saved, props.records))
+const customers = ref(mergeBusinessCustomers(saved, props.allRecords.length ? props.allRecords : props.records))
 
 const activeCustomer = computed(() => customers.value.find((x) => x.id === activeCustomerId.value))
 function hasPermission(path, action = 'operate') {
@@ -345,10 +347,21 @@ function hasPermission(path, action = 'operate') {
   const rootActions = props.permissions?.[root]
   return Array.isArray(rootActions) && (rootActions.includes(action) || rootActions.includes('operate'))
 }
-const canManageAssets = computed(() => hasPermission('customers.customerDetail', 'operate'))
+const canAdjustBalance = computed(() => hasPermission('customers.customerDetail.point2', 'operate'))
+const canAdjustPoints = computed(() => hasPermission('customers.customerDetail.point3', 'operate'))
+const canPurchasePackage = computed(() => hasPermission('customers.customerDetail.point5', 'operate'))
+const canRecharge = computed(() => hasPermission('customers.customerDetail.point6', 'operate'))
+const canCreateCustomer = computed(() => hasPermission('customers.customerList.point1', 'operate'))
+const canEditCustomer = computed(() => hasPermission('customers.customerList.point2', 'operate'))
 const canManageCustomerStatus = computed(() => hasPermission('customers.customerList.point3', 'operate'))
 const canDeleteCustomer = computed(() => hasPermission('customers.customerList.point4', 'operate'))
-const scopedCustomers = computed(() => customers.value.filter((x) => accessibleStores.value.includes(x.store)))
+const scopedRecordPhones = computed(() => new Set(props.records.flatMap((record) => recordPeople(record).map((person) => normalizePhone(person.phone)))))
+function customerInScope(customer) {
+  if (props.role === 'admin' || props.dataScope === '全部门店') return true
+  if (['本店', '指定门店'].includes(props.dataScope)) return accessibleStores.value.includes(customer.store)
+  return customer.createdBy?.name === props.roleMeta.name || scopedRecordPhones.value.has(normalizePhone(customer.phone))
+}
+const scopedCustomers = computed(() => customers.value.filter(customerInScope))
 const filteredCustomers = computed(() => {
   const q = keyword.value.trim().toLowerCase()
   const rows = scopedCustomers.value.filter((x) => {
@@ -371,7 +384,10 @@ const totalBalance = computed(() => scopedCustomers.value.reduce((sum, x) => sum
 const totalRemaining = computed(() => scopedCustomers.value.reduce((sum, x) => sum + remainingCount(x), 0))
 const allProjects = computed(() => [...new Set(props.projectCatalog.flatMap((x) => x.options))])
 const customerFollowups = computed(() => [...(activeCustomer.value?.followups || [])].sort((a,b) => b.date.localeCompare(a.date)))
-const activityPackageOptions = computed(() => JSON.parse(localStorage.getItem('cosmetic-settings-data-v1') || 'null')?.activityPackages?.filter(item => item.status === 'active') || [])
+const activityPackageOptions = computed(() => {
+  try { return JSON.parse(localStorage.getItem('cosmetic-settings-data-v1') || 'null')?.activityPackages?.filter(item => item.status === 'active') || [] }
+  catch { return [] }
+})
 const selectedActivityPackage = computed(() => activityPackageOptions.value.find(item => item.id === packageForm.activityPackageId))
 
 const customerRules = {
@@ -384,14 +400,12 @@ const customerRules = {
 }
 const assetRules = {
   action: [{ required: true, message: '请选择调整类型', trigger: 'change' }],
-  amount: [{ required: true, message: '请填写调整数量', trigger: 'change' }],
-  reason: [{ required: true, message: '请填写调整原因', trigger: 'blur' }]
+  amount: [{ required: true, message: '请填写调整数量', trigger: 'change' }]
 }
 const packageRules = {
   project: [{ required: true, message: '请选择项目', trigger: 'change' }],
   count: [{ required: true, message: '请填写次数', trigger: 'change' }],
-  amount: [{ required: true, message: '请填写金额', trigger: 'change' }],
-  reason: [{ required: true, message: '请填写原因', trigger: 'blur' }]
+  amount: [{ required: true, message: '请填写金额', trigger: 'change' }]
 }
 const photoRules = {
   type: [{ required: true, message: '请选择照片类型', trigger: 'change' }],
@@ -402,7 +416,7 @@ const photoRules = {
 const followupRules = { date:[{required:true,message:'请选择回访日期',trigger:'change'}], method:[{required:true,message:'请选择回访方式',trigger:'change'}], satisfaction:[{required:true,message:'请选择满意度',trigger:'change'}], spendingPower:[{required:true,message:'请选择消费力评级',trigger:'change'}], note:[{required:true,message:'请填写回访记录',trigger:'blur'}] }
 
 watch(customers, (value) => localStorage.setItem(STORAGE_KEY, JSON.stringify(value)), { deep: true })
-watch(() => props.records, (value) => { customers.value = mergeBusinessCustomers(customers.value, value) }, { deep: true })
+watch(() => props.allRecords, (value) => { customers.value = mergeBusinessCustomers(customers.value, value.length ? value : props.records) }, { deep: true })
 watch(() => [props.role, props.roleMeta.managedStores], () => { storeFilter.value = accessibleStores.value.length > 1 ? 'all' : accessibleStores.value[0] }, { deep: true })
 watch(() => props.focusRequest, () => {
   if (!props.focusPhone) return
@@ -411,21 +425,33 @@ watch(() => props.focusRequest, () => {
 }, { immediate: true })
 watch([keyword, storeFilter, levelFilter, statusFilter, visitRange], () => { currentPage.value = 1 })
 
+function recordCompanions(record) {
+  const source = Array.isArray(record?.companions) ? record.companions : [record?.vip2].filter(Boolean)
+  const seen = new Set()
+  return source.filter((person) => {
+    const key = normalizePhone(person?.phone) || person?.id || person?.name
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+function recordPeople(record) { return [record?.vip1, ...recordCompanions(record)].filter(Boolean) }
+
 function mergeBusinessCustomers(existing, records) {
   const map = new Map(existing.map((x) => [normalizePhone(x.phone), x]))
   records.forEach((record) => {
-    ;[record.vip1, record.vip2].filter(Boolean).forEach((person, index) => {
+    ;recordPeople(record).forEach((person, index) => {
       const phone = normalizePhone(person.phone)
       if (!/^1\d{10}$/.test(phone)) return
       const current = map.get(phone)
       if (!current) {
         map.set(phone, {
-          id: `C${phone.slice(-6)}`, name: person.name, phone, gender: '女', birthday: '',
-          store: record.store, source: index === 0 ? 'VIP1业务同步' : 'VIP2同行同步',
+          id: person.id || `C${phone.slice(-6)}`, name: person.name, phone, gender: '女', birthday: '',
+          store: person.store || record.store, source: index === 0 ? '主顾客业务同步' : '同行顾客业务同步',
           memberLevel: recordAmount(record) >= 10000 ? '金卡' : '普通会员', status: 'active',
           preferences: '', taboos: '', preparation: '', note: '', owners: ownerSnapshot(record), balance: 0,
           points: Math.round(recordAmount(record) / 10), packages: seedPackages(record),
-          createdAt: nowText(), logs: [makeLog('自动建档', `由${index === 0 ? 'VIP1' : 'VIP2'}业务单 ${record.id} 自动生成`, 'success')]
+          createdAt: nowText(), logs: [makeLog('自动建档', `由${index === 0 ? '主顾客' : '同行顾客'}业务单 ${record.id} 自动生成`, 'success')]
         })
       } else {
         current.name ||= person.name
@@ -436,12 +462,13 @@ function mergeBusinessCustomers(existing, records) {
     })
   })
   map.forEach((customer) => {
-    const related = records.filter((record) => [record.vip1, record.vip2].filter(Boolean).some((person) => normalizePhone(person.phone) === normalizePhone(customer.phone)))
+    const related = records.filter((record) => recordPeople(record).some((person) => normalizePhone(person.phone) === normalizePhone(customer.phone)))
+    if (!related.length) return
     customer.lastVisit = related.map((record) => record.businessDate).sort().at(-1) || customer.lastVisit || ''
     customer.owners ||= {}
     const latestRecord = [...related].sort((a, b) => `${a.businessDate}${a.appointmentTime}`.localeCompare(`${b.businessDate}${b.appointmentTime}`)).at(-1)
     if (latestRecord) Object.entries(ownerSnapshot(latestRecord)).forEach(([key, value]) => { if (!customer.owners[key] && value) customer.owners[key] = value })
-    customer.owners = migrateDemoOwners(customer.owners)
+    customer.owners = migrateDemoOwners(customer.owners, customer.store)
     customer.visitCount = related.length
     customer.totalSpend = related.reduce((sum, record) => sum + recordAmount(record), 0)
     const projectUsage = new Map()
@@ -477,9 +504,11 @@ function mergeBusinessCustomers(existing, records) {
   })
   return [...map.values()]
 }
-function migrateDemoOwners(owners = {}) {
-  const activeByRole = Object.fromEntries(props.staffOptions.filter((employee) => employee.status === 'active').map((employee) => [employee.roleKey, employee.name]))
-  return Object.fromEntries(Object.entries(owners).map(([key, value]) => [key, activeByRole[key] || value]))
+function migrateDemoOwners(owners = {}, store = '') {
+  return Object.fromEntries(Object.entries(owners).map(([key, value]) => {
+    const exactEmployee = props.staffOptions.find((employee) => employee.status === 'active' && employee.roleKey === key && employee.store === store && employee.name === value)
+    return [key, exactEmployee?.name || value]
+  }))
 }
 function seedPackages(record) {
   if (!record.projects?.length || !recordAmount(record)) return []
@@ -502,15 +531,19 @@ function openCustomerForm(customer) {
 }
 async function saveCustomer() {
   if (!await customerFormRef.value?.validate().catch(() => false)) return
+  if (!accessibleStores.value.includes(customerForm.store)) return ElMessage.error('无权在该门店维护顾客档案')
   const duplicate = customers.value.find((x) => normalizePhone(x.phone) === normalizePhone(customerForm.phone) && x.id !== editingCustomerId.value)
   if (duplicate) {
-    customerFormVisible.value = false
-    openCustomerDetail(duplicate)
-    ElMessage.warning('该手机号已有档案，已为您打开')
+    if (customerInScope(duplicate)) {
+      customerFormVisible.value = false
+      openCustomerDetail(duplicate)
+      ElMessage.warning('该手机号已有档案，已为您打开')
+    } else ElMessage.warning('该手机号已有档案，但不在当前数据范围内')
     return
   }
   if (editingCustomerId.value) {
     const target = customers.value.find((x) => x.id === editingCustomerId.value)
+    if (!target || !customerInScope(target)) return ElMessage.error('该顾客不在当前数据范围内')
     const oldStore = target.store
     Object.assign(target, customerForm)
     target.logs.push(makeLog('编辑顾客资料', oldStore !== target.store ? `顾客转店：${oldStore} → ${target.store}` : '更新基础资料'))
@@ -518,20 +551,22 @@ async function saveCustomer() {
     const phone = normalizePhone(customerForm.phone)
     customers.value.push({
       ...customerForm, phone, id: `C${phone.slice(-6)}`, status: 'active', balance: 0, points: 0,
-      packages: [], createdAt: nowText(), logs: [makeLog('手工建档', '新增顾客档案', 'success')]
+      createdBy: { role: props.role, name: props.roleMeta.name }, packages: [], createdAt: nowText(), logs: [makeLog('手工建档', '新增顾客档案', 'success')]
     })
   }
   customerFormVisible.value = false
   ElMessage.success('顾客档案已保存')
 }
 async function changeStatus(customer, status) {
+  if (!customerInScope(customer)) return ElMessage.error('该顾客不在当前数据范围内')
   const label = status === 'active' ? '恢复' : '暂停'
   await ElMessageBox.confirm(`确认${label}顾客“${customer.name}”？`, `${label}档案`, { type: status === 'active' ? 'success' : 'warning' })
   customer.status = status
   customer.logs.push(makeLog(`${label}档案`, `档案状态调整为${statusLabel(status)}`, status === 'active' ? 'success' : 'warning'))
 }
 async function removeCustomer(customer) {
-  const hasRelations = customerRecords(customer).length || customer.packages?.length || customer.balance || customer.points || (await photoCount(customer.id))
+  if (!customerInScope(customer)) return ElMessage.error('该顾客不在当前数据范围内')
+  const hasRelations = allCustomerRecords(customer).length || customer.packages?.length || customer.balance || customer.points || (await photoCount(customer.id))
   if (hasRelations) {
     await ElMessageBox.confirm('该顾客已有业务、资产或照片，只能移入已删除档案，是否继续？', '软删除档案', { type: 'warning' })
     customer.status = 'deleted'
@@ -542,12 +577,14 @@ async function removeCustomer(customer) {
   }
 }
 function openAssetDialog(type) {
+  if ((type === 'balance' && !canAdjustBalance.value) || (type === 'points' && !canAdjustPoints.value)) return ElMessage.error('无对应资产调整权限')
   if (activeCustomer.value.status !== 'active') return ElMessage.warning('暂停或已删除顾客不能调整资产')
   assetType.value = type
   Object.assign(assetForm, { action: type === 'balance' ? '充值' : '赠送', amount: type === 'balance' ? 1000 : 100, reason: '' })
   assetDialogVisible.value = true
 }
 function openRechargeDialog() {
+  if (!canRecharge.value) return ElMessage.error('无会员充值权限')
   const customer = activeCustomer.value
   Object.assign(rechargeForm, { amount: 1000, discount: 1, paid: 1000, memberLevel: customer.memberLevel || '普通会员', note: '' })
   rechargePaidManually.value = false
@@ -558,9 +595,9 @@ function syncRechargePaid() {
 }
 function markRechargePaidManual() { rechargePaidManually.value = true }
 function submitRecharge() {
+  if (!canRecharge.value) return ElMessage.error('无会员充值权限')
   const customer = activeCustomer.value
-  const expected = Number((rechargeForm.amount * rechargeForm.discount).toFixed(2))
-  if (Number(rechargeForm.paid) !== expected && !rechargeForm.note.trim()) return ElMessage.warning('实际付款与折扣计算不一致时，请填写操作备注')
+
   const before = Number(customer.balance || 0)
   customer.balance = before + Number(rechargeForm.amount || 0)
   customer.memberLevel = rechargeForm.memberLevel
@@ -569,6 +606,7 @@ function submitRecharge() {
   ElMessage.success('会员充值已到账并记录流水')
 }
 async function submitAssetAdjustment() {
+  if ((assetType.value === 'balance' && !canAdjustBalance.value) || (assetType.value === 'points' && !canAdjustPoints.value)) return ElMessage.error('无对应资产调整权限')
   if (!await assetFormRef.value?.validate().catch(() => false)) return
   const customer = activeCustomer.value
   const field = assetType.value === 'balance' ? 'balance' : 'points'
@@ -582,6 +620,7 @@ async function submitAssetAdjustment() {
   ElMessage.success('资产调整单已生效')
 }
 function openPackageDialog(pkg, sourceType = 'singleProject') {
+  if (!canPurchasePackage.value) return ElMessage.error('无项目套餐操作权限')
   if (activeCustomer.value.status !== 'active') return ElMessage.warning('暂停或已删除顾客不能调整套餐')
   packageMode.value = pkg ? 'consume' : 'purchase'
   Object.keys(packageForm).forEach((key) => delete packageForm[key])
@@ -595,6 +634,7 @@ function applyActivityPackage() {
   packageForm.expiry = addMonths(today(), Number(selected.validMonths || Number(selected.validYears || 1) * 12))
 }
 async function submitPackage() {
+  if (!canPurchasePackage.value) return ElMessage.error('无项目套餐操作权限')
   if (!await packageFormRef.value?.validate().catch(() => false)) return
   const customer = activeCustomer.value
   if (packageMode.value === 'purchase') {
@@ -664,8 +704,11 @@ async function deletePhoto(photo) {
   await loadPhotos()
 }
 async function loadPhotos() { const rows = activeCustomer.value ? await getPhotos(activeCustomer.value.id) : []; customerPhotos.value = rows.filter(photo => photo.type !== 'followup'); followupPhotos.value = rows.filter(photo => photo.type === 'followup') }
+function allCustomerRecords(customer) {
+  return (props.allRecords.length ? props.allRecords : props.records).filter((record) => recordPeople(record).some((person) => normalizePhone(person.phone) === normalizePhone(customer.phone)))
+}
 function customerRecords(customer) {
-  return props.records.filter((record) => [record.vip1, record.vip2].filter(Boolean).some((person) => normalizePhone(person.phone) === normalizePhone(customer.phone)))
+  return props.records.filter((record) => recordPeople(record).some((person) => normalizePhone(person.phone) === normalizePhone(customer.phone)))
     .sort((a, b) => `${b.businessDate} ${b.appointmentTime}`.localeCompare(`${a.businessDate} ${a.appointmentTime}`))
 }
 function staffOptionsFor(roleKey) {

@@ -2,7 +2,7 @@
   <section class="deal-report-page">
     <div class="deal-toolbar">
       <el-date-picker v-model="dateRange" type="daterange" value-format="YYYY-MM-DD" format="YYYY/MM/DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" :clearable="false" :disabled-date="disableFuture" />
-      <el-select v-model="selectedStore" :disabled="role !== 'admin'"><el-option v-if="role === 'admin'" label="全部门店" value="all" /><el-option v-for="store in stores" :key="store" :label="store" :value="store" /></el-select>
+      <el-select v-model="selectedStore" :disabled="!canSelectMultipleStores"><el-option v-if="canSelectMultipleStores" label="全部门店" value="all" /><el-option v-for="store in accessibleStores" :key="store" :label="store" :value="store" /></el-select>
       <el-select v-model="selectedDimension"><el-option v-if="!personalView" label="全部岗位" value="all" /><el-option v-for="item in availableDimensions" :key="item.key" :label="item.label" :value="item.key" /></el-select>
       <el-tag type="info">实时数据</el-tag>
       <el-button class="toolbar-action" type="success" :icon="Download" @click="exportExcel">导出Excel</el-button>
@@ -49,7 +49,9 @@ const props=defineProps({records:{type:Array,required:true},role:{type:String,re
 defineEmits(['open-record'])
 const today=()=>new Date().toISOString().slice(0,10)
 const dateRange=ref([today(),today()])
-const selectedStore=ref(props.role==='admin'?'all':props.roleMeta.store)
+const accessibleStores=computed(()=>(props.role==='admin'?props.stores:(props.roleMeta.managedStores?.length?props.roleMeta.managedStores:[props.roleMeta.store])).filter(Boolean))
+const canSelectMultipleStores=computed(()=>accessibleStores.value.length>1)
+const selectedStore=ref(canSelectMultipleStores.value?'all':accessibleStores.value[0])
 const personalView=computed(()=>!['storeManager','director','admin'].includes(props.role))
 const selectedDimension=ref(personalView.value?props.role:'all')
 const pageSize=15
@@ -61,11 +63,11 @@ const availableDimensions=computed(()=>personalView.value?dimensions.filter(item
 const dimensionLabel=computed(()=>selectedDimension.value==='all'?'全部岗位':dimensions.find(x=>x.key===selectedDimension.value)?.label||'人员')
 const rangeLabel=computed(()=>dateRange.value[0]===dateRange.value[1]?displayDate(dateRange.value[0]):`${displayDate(dateRange.value[0])} 至 ${displayDate(dateRange.value[1])}`)
 const dailyRecords=computed(()=>props.records.filter(x=>x.businessDate>=dateRange.value[0]&&x.businessDate<=dateRange.value[1]&&(selectedStore.value==='all'||x.store===selectedStore.value)))
-const storeGroups=computed(()=>{const names=selectedStore.value==='all'?props.stores:[selectedStore.value];return names.map(store=>buildStoreGroup(store,dailyRecords.value.filter(x=>x.store===store)))})
+const storeGroups=computed(()=>{const names=selectedStore.value==='all'?accessibleStores.value:[selectedStore.value];return names.map(store=>buildStoreGroup(store,dailyRecords.value.filter(x=>x.store===store)))})
 const allSummary=computed(()=>sumRows(storeGroups.value.map(x=>x.summary)))
 const displayGroups=computed(()=>selectedStore.value==='all'?[{store:'全部门店汇总',rows:mergePeople(storeGroups.value.flatMap(x=>x.rows)),summary:allSummary.value},...storeGroups.value]:storeGroups.value)
 watch([dateRange,selectedStore,selectedDimension],()=>Object.keys(pages).forEach(k=>delete pages[k]),{deep:true})
-watch(()=>props.role,()=>{selectedStore.value=props.role==='admin'?'all':props.roleMeta.store;selectedDimension.value=personalView.value?props.role:'all'})
+watch(()=>[props.role,props.roleMeta.managedStores],()=>{selectedStore.value=canSelectMultipleStores.value?'all':accessibleStores.value[0];selectedDimension.value=personalView.value?props.role:'all'},{deep:true})
 
 function ownerFor(record,key){if(key==='cardConsultant')return record.cardConsultant||'未分配';if(key==='beautyConsultant')return record.beautyConsultant||'未分配';return record.assignments?.[key]||'未分配'}
 function ownerName(record){return selectedDimension.value==='all'?'全部岗位':ownerFor(record,selectedDimension.value)}
@@ -74,7 +76,7 @@ function summarize(records){const section=type=>{const source=records.filter(x=>
 function combine(a,b){const consultations=a.consultations+b.consultations,deals=a.deals+b.deals,performance=a.performance+b.performance,cash=a.cash+b.cash;return {consultations,deals,performance,cash,conversion:consultations?deals/consultations*100:0,ticket:deals?performance/deals:0}}
 function sumRows(rows){return rows.reduce((acc,row)=>({new:combine(acc.new,row.new),returning:combine(acc.returning,row.returning),total:combine(acc.total,row.total)}),{new:zero(),returning:zero(),total:zero()})}
 function zero(){return {consultations:0,deals:0,performance:0,cash:0,conversion:0,ticket:0}}
-function personCount(record){return record.vip2?2:1}
+function personCount(record){return 1+(Array.isArray(record.companions)?record.companions.length:(record.vip2?1:0))}
 function isConsultation(record){return ['service','followup','completed'].includes(record.status)}
 function isDeal(record){return record.status!=='cancelled'&&record.appointmentStatus!=='cancelled'&&recordAmount(record)>0}
 function recordAmount(record){return Number(record.revenue||0)+Number(record.cardAmount||0)}

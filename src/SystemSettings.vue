@@ -131,7 +131,27 @@
                 <article><h3>会员积分比例</h3><p>每消费100元赠送积分</p><el-input-number v-model="currentStoreRule.pointsPer100" :min="0" :max="100" :disabled="!canEditRules" @change="saveSettings('更新积分规则')" /></article>
                 <article><h3>业务编号前缀</h3><p>本门店新建业务与预约使用的编号前缀</p><el-input v-model="currentStoreRule.businessPrefix" :disabled="!canEditRules" @change="saveSettings('更新编号规则')" /></article>
               </div>
-              <div class="workflow-config"><h3>服务流程节点</h3><div><span v-for="(node, index) in workflowNodes" :key="node.key"><b>{{ index + 1 }}</b>{{ node.label }}<small>{{ node.owner }}</small></span></div></div>
+              <div class="workflow-config">
+                <div class="workflow-config-head">
+                  <div><h3>服务流程节点</h3><p>与工作台业务阶段同步；可修改显示名称并调整流程顺序。</p></div>
+                  <el-tag type="info">系统统一配置</el-tag>
+                </div>
+                <div class="workflow-node-list">
+                  <article v-for="(node, index) in workflowNodes" :key="node.key" class="workflow-node-row">
+                    <b>{{ index + 1 }}</b>
+                    <div class="workflow-node-main">
+                      <el-input v-model="node.label" maxlength="12" :disabled="!isAdmin" @change="saveWorkflowNodeName(node)" />
+                      <small>负责角色：{{ node.owner }} · 节点编码：{{ node.key }}</small>
+                    </div>
+                    <el-tag :type="node.terminal ? 'info' : 'primary'" effect="plain">{{ node.terminal ? '结束状态' : '流程节点' }}</el-tag>
+                    <div class="workflow-node-actions">
+                      <el-button size="small" :disabled="!isAdmin || !canMoveWorkflowNode(index, -1)" @click="moveWorkflowNode(index, -1)">上移</el-button>
+                      <el-button size="small" :disabled="!isAdmin || !canMoveWorkflowNode(index, 1)" @click="moveWorkflowNode(index, 1)">下移</el-button>
+                    </div>
+                  </article>
+                </div>
+                <p class="workflow-config-tip">节点内部编码保持不变；修改后将同步工作台阶段名称、筛选顺序及任务推进顺序。</p>
+              </div>
             </section>
           </div>
         </template>
@@ -224,6 +244,8 @@
 <script setup>
 import { computed, defineComponent, h, reactive, ref, resolveComponent, watch } from 'vue'
 import PermissionTree from './PermissionTree.vue'
+import { grantDemoCrudPermissions } from './demoPermissions.js'
+import { createOrgEntityDefaults, loadLocalJson, normalizeOrgRegions, normalizeWorkflowNodes } from './settingsStorage.js'
 import { Box, Briefcase, Coin, Connection, DataBoard, Document, Goods, Key, OfficeBuilding, Setting, UploadFilled, User } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -237,8 +259,8 @@ const props = defineProps({
 const emit = defineEmits(['config-change'])
 const SETTINGS_KEY = 'cosmetic-settings-data-v1'
 const INVENTORY_KEY = 'cosmetic-inventory-data-v1'
-const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null')
-const inventorySaved = JSON.parse(localStorage.getItem(INVENTORY_KEY) || 'null')
+const saved = loadLocalJson(SETTINGS_KEY)
+const inventorySaved = loadLocalJson(INVENTORY_KEY)
 const activeModule = ref('org')
 const search = ref('')
 const storeFilter = ref('all')
@@ -361,7 +383,7 @@ const performanceRoleOptions = [
   {key:'service',label:'客服'},{key:'butler',label:'管家'},{key:'director',label:'总监'},{key:'manager',label:'经理'}
 ]
 
-const orgRegions = reactive(saved?.orgRegions || seedOrg())
+const orgRegions = reactive(normalizeOrgRegions(saved?.orgRegions, seedOrg))
 const staff = reactive(ensureDemoStaff(saved?.staff || seedStaff()).map(normalizeStaff))
 const projects = reactive((saved?.projects || seedProjects()).map(x=>({followupDays:60,...x})))
 const roles = reactive(ensureDemoRoles(saved?.roles || seedRoles()).map(normalizeRole))
@@ -377,7 +399,7 @@ const materials = reactive(inventorySaved?.materials || seedMaterials())
 const batches = reactive(inventorySaved?.batches || seedBatches())
 const inventoryLogs = reactive(inventorySaved?.inventoryLogs || [])
 const materialTemplates = reactive(inventorySaved?.materialTemplates || {})
-const workflowNodes = [{key:'invited',label:'市场邀约',owner:'市场'},{key:'reception',label:'客服接待',owner:'客服'},{key:'triage',label:'管家分诊',owner:'管家'},{key:'scheduling',label:'总监排诊',owner:'总监'},{key:'service',label:'服务执行',owner:'总监'},{key:'followup',label:'客服回访',owner:'客服'}]
+const workflowNodes = reactive(normalizeWorkflowNodes(saved?.workflowNodes))
 
 const flatStores = computed(() => orgRegions.flatMap(r => r.stores))
 const orgTreeRows = computed(() => [{id:'company-root',name:'医美医疗美容集团',type:'company',status:'active',children:orgRegions.map(region=>({id:region.id,name:region.name,type:'region',status:'active',children:region.stores.map(store=>({id:store.id,name:store.name,type:'store',manager:store.manager,phone:store.phone,address:store.address,status:store.status,source:store,children:(store.departments||[]).map((dept,index)=>({id:`${store.id}-dept-${index}`,name:typeof dept==='string'?dept:dept.name,type:'department',manager:typeof dept==='string'?'':dept.manager,phone:typeof dept==='string'?'':dept.phone,status:typeof dept==='string'?'active':dept.status||'active',storeId:store.id,storeName:store.name,source:dept}))}))}))}])
@@ -427,18 +449,37 @@ const filteredAuditLogs = computed(() => auditLogs.filter(x => (logModule.value=
 const entityDialogTitle = computed(() => `${editingId.value?'编辑':'新增'}${{staff:'员工',project:'项目',material:'物资',org:'组织',role:'角色'}[entityType.value]||''}`)
 const stockActionTitle = computed(() => ({in:'物资入库',out:'领用出库',return:'物资退库',transfer:'门店调拨',count:'库存盘点',damage:'物资报损'}[stockAction.value]))
 const entityRules = { code:[{required:true,message:'请填写编码',trigger:'blur'}], name:[{required:true,message:'请填写名称',trigger:'blur'}], label:[{required:true,message:'请填写角色名称',trigger:'blur'}], store:[{required:true,message:'请选择门店',trigger:'change'}] }
-const stockRules = { store:[{required:true,message:'请选择门店',trigger:'change'}],targetStore:[{required:true,message:'请选择调入门店',trigger:'change'}],materialId:[{required:true,message:'请选择物资',trigger:'change'}],quantity:[{required:true,message:'请填写数量',trigger:'change'}],batchNo:[{required:true,message:'请填写批号',trigger:'blur'}],expiryDate:[{required:true,message:'请选择有效期',trigger:'change'}],reason:[{required:true,message:'请填写用途或原因',trigger:'blur'}] }
+const stockRules = { store:[{required:true,message:'请选择门店',trigger:'change'}],targetStore:[{required:true,message:'请选择调入门店',trigger:'change'}],materialId:[{required:true,message:'请选择物资',trigger:'change'}],quantity:[{required:true,message:'请填写数量',trigger:'change'}],batchNo:[{required:true,message:'请填写批号',trigger:'blur'}],expiryDate:[{required:true,message:'请选择有效期',trigger:'change'}] }
 const performanceRules = { roleKey:[{required:true,message:'请选择用户角色',trigger:'change'}],projectCategory:[{required:true,message:'请选择项目类型',trigger:'change'}],basis:[{required:true,message:'请选择业绩计算基数',trigger:'change'}],stores:[{required:true,type:'array',min:1,message:'请至少选择一个门店',trigger:'change'}] }
 
 watch([orgRegions,staff,projects,roles,performanceConfigs,storeRules,dictionaries,activityPackages,auditLogs],persistSettings,{deep:true})
 watch([materials,batches,inventoryLogs,materialTemplates],persistInventory,{deep:true})
 watch([activeModule, search, storeFilter, statusFilter, staffRoleFilter, hireDateRange, categoryFilter, performanceRoleFilter, performanceCategoryFilter, materialCategoryFilter, logModule, inventoryTab],()=>{listPage.value=1})
 
-function persistSettings(){localStorage.setItem(SETTINGS_KEY,JSON.stringify({orgRegions,staff,projects,roles,performanceConfigs,storeRules,dictionaries,activityPackages,auditLogs}));emitConfig()}
+function persistSettings(){localStorage.setItem(SETTINGS_KEY,JSON.stringify({orgRegions,staff,projects,roles,performanceConfigs,storeRules,dictionaries,activityPackages,auditLogs,workflowNodes}));emitConfig()}
 function persistInventory(){localStorage.setItem(INVENTORY_KEY,JSON.stringify({materials,batches,inventoryLogs,materialTemplates}))}
 function saveSettings(action){addAudit('rules',action,ruleStore.value,'门店独立规则已更新');emitConfig()}
-function emitConfig(){const departmentNames=[...new Set(flatStores.value.flatMap(store=>(store.departments||[]).map(dept=>typeof dept==='string'?dept:dept.name)).filter(Boolean))];emit('config-change',{stores:flatStores.value.filter(x=>x.status==='active').map(x=>x.name),departments:departmentNames,projectCatalog:buildProjectCatalog(),staff:JSON.parse(JSON.stringify(staff)),roles:JSON.parse(JSON.stringify(roles))})}
-function buildProjectCatalog(){const groups=new Map();projects.filter(x=>x.status==='active').forEach(x=>{if(!groups.has(x.category))groups.set(x.category,[]);groups.get(x.category).push(x.name)});return [...groups].map(([label,options])=>({label,options}))}
+function emitConfig(){const departmentNames=[...new Set(flatStores.value.flatMap(store=>(store.departments||[]).map(dept=>typeof dept==='string'?dept:dept.name)).filter(Boolean))];emit('config-change',{stores:flatStores.value.filter(x=>x.status==='active').map(x=>x.name),departments:departmentNames,projectCatalog:buildProjectCatalog(),staff:JSON.parse(JSON.stringify(staff)),roles:JSON.parse(JSON.stringify(roles)),workflowNodes:JSON.parse(JSON.stringify(workflowNodes))})}
+function saveWorkflowNodeName(node){
+  const trimmedLabel=String(node.label||'').trim()
+  if(!trimmedLabel){
+    const defaultNode=normalizeWorkflowNodes().find(item=>item.key===node.key)
+    node.label=defaultNode.label
+  }else node.label=trimmedLabel
+  addAudit('rules','修改流程节点名称',node.label,`节点编码：${node.key}`)
+  persistSettings()
+  ElMessage.success('流程节点名称已同步至工作台')
+}
+function canMoveWorkflowNode(index,direction){const target=index+direction;return target>=0&&target<workflowNodes.length&&workflowNodes[index]?.terminal===workflowNodes[target]?.terminal}
+function moveWorkflowNode(index,direction){
+  if(!canMoveWorkflowNode(index,direction))return
+  const target=index+direction
+  const [node]=workflowNodes.splice(index,1)
+  workflowNodes.splice(target,0,node)
+  addAudit('rules','调整流程节点顺序',node.label,`调整至第${target+1}位`)
+  persistSettings()
+  ElMessage.success('流程节点顺序已同步至工作台')
+}function buildProjectCatalog(){const groups=new Map();projects.filter(x=>x.status==='active').forEach(x=>{if(!groups.has(x.category))groups.set(x.category,[]);groups.get(x.category).push(x.name)});return [...groups].map(([label,options])=>({label,options}))}
 function matches(_row,values){const q=search.value.trim().toLowerCase();return !q||values.some(v=>String(v||'').toLowerCase().includes(q))}
 function paginate(rows){const start=(listPage.value-1)*pageSize;return rows.slice(start,start+pageSize)}
 function canEditStore(name){return isAdmin.value||name===props.roleMeta.store}
@@ -461,9 +502,9 @@ function hireDateMatches(hireDate){if(!hireDateRange.value?.length)return true;c
 function staffNodeCount(node){return staff.filter(employee=>allowedStores.value.includes(employee.store)&&staffMatchesNode(employee,node)).length}
 function selectStaffNode(data){selectedStaffNodeId.value=data.id;listPage.value=1}
 function toggleStatus(row){row.status=row.status==='active'?'disabled':'active';addAudit('staff',row.status==='active'?'启用员工':'停用员工',row.name,`状态调整为${row.status}`)}
-function openEntity(type,row){entityType.value=type;editingId.value=row?.id||null;Object.keys(entityForm).forEach(k=>delete entityForm[k]);const defaults={staff:{code:`E${String(staff.length+1).padStart(4,'0')}`,name:'',gender:'女',birthday:'',phone:'',idNumber:'',email:'',emergencyContact:'',emergencyPhone:'',address:'',store:allowedStores.value[0],department:props.departments[0],roleKey:'market',secondaryStores:[],hireDate:today(),yearsExperience:0,education:'大专',specialty:'',certificates:'',experiences:[],status:'active'},project:{code:`P${String(projects.length+1).padStart(4,'0')}`,name:'',category:props.projectCatalog[0]?.label,department:props.departments[0],price:0,cardPrice:0,duration:60,courseCount:1,status:'active'},material:{code:`M${String(materials.length+1).padStart(4,'0')}`,name:'',category:materialCategories[0],spec:'',unit:'盒',brand:'',supplier:'',cost:0,minStock:5,maxStock:100,status:'active',stores:[...props.stores]},org:{nodeType:'store',name:'',region:orgRegions[0].name,storeId:flatStores.value[0]?.id,manager:'',phone:'',address:'',status:'active'},role:{label:'',dataScope:'本店',permissions:{workbench:['view']}}};let source=row?JSON.parse(JSON.stringify(row)):defaults[type];if(type==='staff')source=normalizeStaff(source);if(type==='role')source=normalizeRole(source);if(type==='org'&&row){source.nodeType=row.nodeType||row.type||'store';source.storeId=row.storeId||source.storeId;if(row.source&&typeof row.source==='object')source={...source,...JSON.parse(JSON.stringify(row.source)),nodeType:row.type,storeId:row.storeId}}Object.assign(entityForm,source);entityVisible.value=true}
-async function saveEntity(){if(!await entityFormRef.value?.validate().catch(()=>false))return;const target={staff,project:projects,material:materials,role:roles}[entityType.value];if(entityType.value==='org'){saveOrg();return}const duplicate=target.find(x=>(x.code&&x.code===entityForm.code||x.label&&x.label===entityForm.label)&&x.id!==editingId.value);if(duplicate)return ElMessage.error('编码或名称重复');if(editingId.value)Object.assign(target.find(x=>x.id===editingId.value),entityForm);else target.push({...entityForm,id:`${entityType.value}-${Date.now()}`});if(entityType.value==='staff'){const roleItem=roles.find(x=>x.key===entityForm.roleKey);const savedRow=target.find(x=>x.id===(editingId.value||target.at(-1).id));savedRow.roleLabel=roleItem?.label||entityForm.roleKey}addAudit(entityType.value,editingId.value?'编辑':'新增',entityForm.name||entityForm.label,JSON.stringify(entityForm));entityVisible.value=false;persistSettings();ElMessage.success('已保存')}
-function saveOrg(){if(entityForm.nodeType==='department'){const store=flatStores.value.find(x=>x.id===entityForm.storeId);if(!store)return ElMessage.error('请选择所属门店');const existingIndex=(store.departments||[]).findIndex((dept,index)=>`${store.id}-dept-${index}`===editingId.value);const department={name:entityForm.name,manager:entityForm.manager,phone:entityForm.phone,status:entityForm.status||'active'};if(existingIndex>=0)store.departments.splice(existingIndex,1,department);else store.departments.push(department);addAudit('org',existingIndex>=0?'编辑部门':'新增部门',department.name,store.name);entityVisible.value=false;emitConfig();return}let store;if(editingId.value){store=flatStores.value.find(x=>x.id===editingId.value);const oldName=store.name;Object.assign(store,{name:entityForm.name,manager:entityForm.manager,phone:entityForm.phone,address:entityForm.address,status:entityForm.status});if(oldName!==store.name){const index=props.stores.indexOf(oldName);if(index>=0)props.stores.splice(index,1,store.name)}}else{const region=orgRegions.find(x=>x.name===entityForm.region);store={id:`store-${Date.now()}`,name:entityForm.name,manager:entityForm.manager,phone:entityForm.phone,address:entityForm.address,departments:[],status:entityForm.status||'active'};region.stores.push(store)}addAudit('org',editingId.value?'编辑门店':'新增门店',store.name,store.address);entityVisible.value=false;emitConfig()}
+function openEntity(type,row){entityType.value=type;editingId.value=row?.id||null;Object.keys(entityForm).forEach(k=>delete entityForm[k]);const defaults={staff:{code:`E${String(staff.length+1).padStart(4,'0')}`,name:'',gender:'女',birthday:'',phone:'',idNumber:'',email:'',emergencyContact:'',emergencyPhone:'',address:'',store:allowedStores.value[0],department:props.departments[0],roleKey:'market',secondaryStores:[],hireDate:today(),yearsExperience:0,education:'大专',specialty:'',certificates:'',experiences:[],status:'active'},project:{code:`P${String(projects.length+1).padStart(4,'0')}`,name:'',category:props.projectCatalog[0]?.label,department:props.departments[0],price:0,cardPrice:0,duration:60,courseCount:1,status:'active'},material:{code:`M${String(materials.length+1).padStart(4,'0')}`,name:'',category:materialCategories[0],spec:'',unit:'盒',brand:'',supplier:'',cost:0,minStock:5,maxStock:100,status:'active',stores:[...props.stores]},org:createOrgEntityDefaults(orgRegions,flatStores.value),role:{label:'',dataScope:'本店',permissions:{workbench:['view']}}};let source=row?JSON.parse(JSON.stringify(row)):defaults[type];if(type==='staff')source=normalizeStaff(source);if(type==='role')source=normalizeRole(source);if(type==='org'&&row){source.nodeType=row.nodeType||row.type||'store';source.storeId=row.storeId||source.storeId;if(row.source&&typeof row.source==='object')source={...source,...JSON.parse(JSON.stringify(row.source)),nodeType:row.type,storeId:row.storeId}}Object.assign(entityForm,source);entityVisible.value=true}
+async function saveEntity(){if(!await entityFormRef.value?.validate().catch(()=>false))return;const target={staff,project:projects,material:materials,role:roles}[entityType.value];if(entityType.value==='org'){saveOrg();return}const duplicate=target.find(x=>(x.code&&x.code===entityForm.code||x.label&&x.label===entityForm.label)&&x.id!==editingId.value);if(duplicate)return ElMessage.error('编码或名称重复');const savedEntity=entityType.value==='role'?normalizeRole(entityForm):entityForm;if(editingId.value)Object.assign(target.find(x=>x.id===editingId.value),savedEntity);else target.push({...savedEntity,id:`${entityType.value}-${Date.now()}`});if(entityType.value==='staff'){const roleItem=roles.find(x=>x.key===entityForm.roleKey);const savedRow=target.find(x=>x.id===(editingId.value||target.at(-1).id));savedRow.roleLabel=roleItem?.label||entityForm.roleKey}addAudit(entityType.value,editingId.value?'编辑':'新增',entityForm.name||entityForm.label,JSON.stringify(entityForm));entityVisible.value=false;persistSettings();ElMessage.success('已保存')}
+function saveOrg(){if(entityForm.nodeType==='department'){const store=flatStores.value.find(x=>x.id===entityForm.storeId);if(!store)return ElMessage.error('请选择所属门店');const existingIndex=(store.departments||[]).findIndex((dept,index)=>`${store.id}-dept-${index}`===editingId.value);const department={name:entityForm.name,manager:entityForm.manager,phone:entityForm.phone,status:entityForm.status||'active'};if(existingIndex>=0)store.departments.splice(existingIndex,1,department);else store.departments.push(department);addAudit('org',existingIndex>=0?'编辑部门':'新增部门',department.name,store.name);entityVisible.value=false;emitConfig();return}let store;if(editingId.value){store=flatStores.value.find(x=>x.id===editingId.value);if(!store)return ElMessage.error('组织信息已失效，请刷新后重试');const oldName=store.name;Object.assign(store,{name:entityForm.name,manager:entityForm.manager,phone:entityForm.phone,address:entityForm.address,status:entityForm.status});if(oldName!==store.name){const index=props.stores.indexOf(oldName);if(index>=0)props.stores.splice(index,1,store.name)}}else{const region=orgRegions.find(x=>x.name===entityForm.region);if(!region)return ElMessage.error('请选择所属区域');store={id:`store-${Date.now()}`,name:entityForm.name,manager:entityForm.manager,phone:entityForm.phone,address:entityForm.address,departments:[],status:entityForm.status||'active'};region.stores.push(store)}addAudit('org',editingId.value?'编辑门店':'新增门店',store.name,store.address);entityVisible.value=false;emitConfig()}
 function openMaterialTemplate(project){templateProject.value=project;templateRows.splice(0,templateRows.length,...JSON.parse(JSON.stringify(materialTemplates[project.id]||[])));templateVisible.value=true}
 function saveMaterialTemplate(){materialTemplates[templateProject.value.id]=JSON.parse(JSON.stringify(templateRows.filter(x=>x.materialId&&x.quantity>0)));addAudit('projects','更新耗材模板',templateProject.value.name,`配置${templateRows.length}种标准耗材`);templateVisible.value=false;ElMessage.success('耗材模板已保存')}
 function projectMaterialCost(project){return (materialTemplates[project.id]||[]).reduce((sum,row)=>sum+(materials.find(x=>x.id===row.materialId)?.cost||0)*row.quantity,0)}
@@ -545,7 +586,7 @@ function normalizeTreePermissions(raw, roleKey = '') {
   flattenPermissionCatalog(permissionCatalog).forEach((node) => { const root = node.path.split('.')[0]; const legacy = Array.isArray(source[root]) ? source[root] : []; const mapped = legacy.map((action) => action === 'edit' ? 'operate' : action); const allowed = node.actions || permissionCapabilities[node.key] || actionOptions; result[node.path] = [...new Set(Array.isArray(source[node.path]) ? source[node.path] : node.path === root ? legacy : mapped.filter((action) => allowed.includes(action)))] })
   if (roleKey === 'admin') flattenPermissionCatalog(permissionCatalog).forEach((node) => { result[node.path] = [...(node.actions || permissionCapabilities[node.key] || actionOptions)] })
   return result
-}function normalizeRole(row){const actionMap={'查看':'view','新增':'create','编辑':'edit','删除':'delete','导入':'import','导出':'export','库存操作':'operate'};const permissions=row.permissions?JSON.parse(JSON.stringify(row.permissions)):Object.fromEntries((row.pages||[]).map(page=>[page,(row.actions||[]).map(x=>actionMap[x]||x)]));['dashboard','dailyReports','dealReports'].forEach(key=>{if(!permissions[key])permissions[key]=['view','export'];else if(!permissions[key].includes('view'))permissions[key].push('view')});if(row.key==='storeManager'&&!permissions.dailyReports)permissions.dailyReports=['view','create','edit','confirm'];if(row.key==='admin'){permissionModules.forEach(module=>{permissions[module.key]=[...actionOptions]})}const treePermissions=normalizeTreePermissions(permissions,row.key);return {...row,label:row.key==='admin'?'admin':row.label,permissions:treePermissions}}
+}function normalizeRole(row){const actionMap={'查看':'view','新增':'create','编辑':'edit','删除':'delete','导入':'import','导出':'export','库存操作':'operate'};const permissions=row.permissions?JSON.parse(JSON.stringify(row.permissions)):Object.fromEntries((row.pages||[]).map(page=>[page,(row.actions||[]).map(x=>actionMap[x]||x)]));['dashboard','dailyReports','dealReports'].forEach(key=>{if(!permissions[key])permissions[key]=['view','export'];else if(!permissions[key].includes('view'))permissions[key].push('view')});if(row.key==='storeManager'&&!permissions.dailyReports)permissions.dailyReports=['view','create','edit','confirm'];if(row.key==='admin'){permissionModules.forEach(module=>{permissions[module.key]=[...actionOptions]})}const treePermissions=grantDemoCrudPermissions(normalizeTreePermissions(permissions,row.key));return {...row,label:row.key==='admin'?'admin':row.label,permissions:treePermissions}}
 function seedOrg(){return [{id:'region-central',name:'华中区域',stores:[{id:'store-main',name:'科臻澳总店',manager:'周店长',phone:'0371-88880001',address:'郑州市金水区示范路88号',departments:['市场部','客服部','管家部','抗衰中心','皮肤管理科'],status:'active'},{id:'store-jinshui',name:'金水形象店',manager:'林经理',phone:'0371-88880002',address:'郑州市金水区商务路16号',departments:['市场部','客服部','皮肤管理科'],status:'active'}]},{id:'region-east',name:'东区区域',stores:[{id:'store-east',name:'东区旗舰店',manager:'许经理',phone:'0371-88880003',address:'郑州市郑东新区商务外环路9号',departments:['市场部','客服部','微整注射科','形体管理科'],status:'active'}]}]}
 function seedStaff(){const rows=[['E0001','苏晴','13800010001','科臻澳总店','市场部','market','市场'],['E0002','顾妍','13800010002','科臻澳总店','客服部','service','客服'],['E0003','安然','13800010003','科臻澳总店','管家部','butler','管家'],['E0004','林珊','13800010004','科臻澳总店','抗衰中心','director','总监'],['E0005','周店长','13800010005','科臻澳总店','管理部','storeManager','店长'],['E0006','秦悦','13800010006','金水形象店','市场部','market','市场'],['E0007','宋佳','13800010007','金水形象店','客服部','service','客服'],['E0008','叶青','13800010008','东区旗舰店','市场部','market','市场'],['E0009','叶老师','13800010009','科臻澳总店','客户管理部','cardConsultant','卡姐'],['E0010','乔老师','13800010010','科臻澳总店','运营部','beautyConsultant','美导'],['E0011','韩经理','13800010011','科臻澳总店','管理部','manager','经理'],['admin','admin','13800010999','总部','平台管理','admin','admin']];return rows.map((x,i)=>normalizeStaff({id:`staff-${i}`,code:x[0],name:x[1],gender:i===4?'男':'女',birthday:`19${88+i}-0${i%8+1}-15`,phone:x[2],email:`staff${i+1}@lanmei.example`,emergencyContact:'家属',emergencyPhone:`1390002000${i}`,address:'郑州市金水区（演示地址）',store:x[3],department:x[4],roleKey:x[5],roleLabel:x[6],secondaryStores:[],hireDate:`202${i%5}-0${i%8+1}-01`,yearsExperience:3+i,education:i%3===0?'本科':'大专',specialty:['顾客邀约与关系维护','客户接待与术后回访','需求分析与分诊','抗衰项目排诊'][i%4],certificates:i%2?'医疗美容咨询师证书':'健康管理师证书',experiences:[{company:'某医疗美容机构',position:x[6],startDate:`201${7+i%3}-03`,endDate:`202${i%3}-12`,description:'负责顾客服务、项目协同及日常业务维护。'}],status:'active'}))}
 function seedProjects(){let i=0;return props.projectCatalog.flatMap(group=>group.options.map(name=>({id:`project-${++i}`,code:`P${String(i).padStart(4,'0')}`,name,category:group.label,department:name.includes('形体')?'形体管理科':name.includes('私密')?'私密护理科':name.includes('玻尿酸')||name.includes('轮廓')?'微整注射科':'皮肤管理科',price:2800+(i%6)*1000,cardPrice:2200+(i%6)*800,duration:30+(i%4)*30,courseCount:i%3?1:5,status:'active'})))}
