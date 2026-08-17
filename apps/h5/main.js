@@ -1,7 +1,10 @@
 const DEMO_DATE = '2026-07-28'
+import { normalizeSnapshot } from '../../shared/demoDataContract.js'
+
 const ADMIN_WORKBENCH_KEY = 'cosmetic-workbench-v2'
 const SHARED_WORKBENCH_API = '/api/shared-workbench'
-const employees = [
+const SHARED_SNAPSHOT_KEY = 'cosmetic-workbench-snapshot-v1'
+let employees = [
   { id: '10001', name: '王晓歌', role: '院长', roleKey: 'storeManager', store: '科臻澳总店', department: '院办', account: 'wangxiaoge', password: '123456' },
   { id: '10002', name: '娜娜', role: '场控', roleKey: 'floorControl', store: '科臻澳总店', department: '客户服务部', account: 'nana', password: '123456' },
   { id: '10003', name: '张璐', role: '护士长', roleKey: 'headNurse', store: '科臻澳总店', department: '护理部', account: 'zhanglu', password: '123456' },
@@ -196,7 +199,15 @@ function readSharedRecords() {
     return Array.isArray(value) ? value : []
   } catch { return [] }
 }
-const sharedRecords = readSharedRecords()
+function readSharedSnapshot() {
+  try {
+    const value = JSON.parse(localStorage.getItem(SHARED_SNAPSHOT_KEY) || 'null')
+    return value && Array.isArray(value.data) && value.data.length ? value : null
+  } catch { return null }
+}
+const cachedSharedSnapshot = readSharedSnapshot()
+const sharedRecords = cachedSharedSnapshot?.data?.length ? cachedSharedSnapshot.data : readSharedRecords()
+let sharedCustomers = Array.isArray(cachedSharedSnapshot?.customers) ? cachedSharedSnapshot.customers : []
 let records = normalize(sharedRecords.length ? sharedRecords : JSON.parse(localStorage.getItem('h5-data') || 'null') || structuredClone(seed))
 if (!sharedRecords.length) seed.forEach(item => { if (!records.some(record => record.id === item.id)) records.push(structuredClone(item)) })
 let view = 'home', selectedId = null, actionMode = '', customerKeyword = '', homeKeyword = '', homeFilter = 'all', filters = { date: '', type: '', keyword: '' }
@@ -207,6 +218,7 @@ let filterDraft = null
 let filterDrawerMode = 'more'
 const rememberedLoginId = localStorage.getItem('h5-login-choice')
 let loginChoice = Math.max(0, employees.findIndex(item => item.id === rememberedLoginId)), loginError = '', accountPickerOpen = false
+if (cachedSharedSnapshot?.config) applySharedConfig(cachedSharedSnapshot.config)
 const app = document.querySelector('#app')
 const save = () => {
   const serialized = JSON.stringify(records)
@@ -245,27 +257,52 @@ function normalize(items) {
     }
   })
 }
-if (!sharedRecords.length) save()
 const taskSignature = rows => JSON.stringify(rows.map(item => ({ id: item.id, status: item.status, logs: item.logs?.length, followups: item.followups?.length, updated: item.floorControl?.completedAt || item.arrivalConfirmation?.confirmedAt || '' })))
 let lastSharedTaskSignature = taskSignature(records)
+let lastSharedSnapshotVersion = Number(cachedSharedSnapshot?.updatedAt || 0)
+let lastPushedSignature = ''
+let writeQueue = Promise.resolve()
+if (!sharedRecords.length) save()
 async function pushSharedWorkbench(rows) {
-  try {
-    await fetch(SHARED_WORKBENCH_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: rows }) })
-    lastSharedTaskSignature = taskSignature(rows)
-  } catch {
-    // Static deployment and offline preview continue to use browser-local demo data.
+  const signature = taskSignature(rows)
+  if (signature === lastPushedSignature) return
+  const operation = async () => {
+    try {
+      const response = await fetch(SHARED_WORKBENCH_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: rows }) })
+      if (!response.ok) return
+      const payload = await response.json().catch(() => ({}))
+      lastPushedSignature = signature
+      lastSharedTaskSignature = signature
+      if (payload.updatedAt) lastSharedSnapshotVersion = Math.max(lastSharedSnapshotVersion, Number(payload.updatedAt))
+      if (Array.isArray(payload.customers)) sharedCustomers = payload.customers
+      localStorage.setItem(SHARED_SNAPSHOT_KEY, JSON.stringify({ ...payload, data: rows, customers: Array.isArray(payload.customers) ? payload.customers : sharedCustomers }))
+    } catch {
+      // Static deployment and offline preview continue to use browser-local demo data.
+    }
   }
+  writeQueue = writeQueue.then(operation, operation)
+  return writeQueue
 }
 async function pullSharedWorkbench() {
   try {
     const response = await fetch(SHARED_WORKBENCH_API, { cache: 'no-store' })
     if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) return
     const payload = await response.json()
-    if (!Array.isArray(payload.data) || !payload.data.length) return
-    const incoming = normalize(payload.data)
+    const snapshot = normalizeSnapshot(payload)
+    if (!snapshot.data.length) return
+    const incomingVersion = Number(snapshot.updatedAt || 0)
+    if (incomingVersion && incomingVersion < lastSharedSnapshotVersion) return
+    applySharedConfig(snapshot.config)
+    const incoming = normalize(snapshot.data)
     const signature = taskSignature(incoming)
-    if (signature === lastSharedTaskSignature) return
+    const incomingCustomers = JSON.stringify(snapshot.customers || [])
+    const currentCustomers = JSON.stringify(sharedCustomers || [])
+    if (signature === lastSharedTaskSignature && incomingVersion <= lastSharedSnapshotVersion && incomingCustomers === currentCustomers) return
     lastSharedTaskSignature = signature
+    lastSharedSnapshotVersion = Math.max(lastSharedSnapshotVersion, incomingVersion)
+    localStorage.setItem(SHARED_SNAPSHOT_KEY, JSON.stringify({ ...payload, data: incoming }))
+    sharedCustomers = Array.isArray(snapshot.customers) ? snapshot.customers : sharedCustomers
+    localStorage.setItem(SHARED_SNAPSHOT_KEY, JSON.stringify({ ...payload, data: incoming, customers: sharedCustomers }))
     records = incoming
     localStorage.setItem('h5-data', JSON.stringify(records))
     localStorage.setItem(ADMIN_WORKBENCH_KEY, JSON.stringify(records))
@@ -275,6 +312,33 @@ async function pullSharedWorkbench() {
     // The shared local service is optional outside the development preview.
   }
 }
+
+function applySharedConfig(config = {}) {
+  if (Array.isArray(config.staff) && config.staff.length) {
+    const previous = employees
+    employees = config.staff.map(item => {
+      const fallback = previous.find(candidate => candidate.id === item.id || candidate.code === item.code || candidate.name === item.name) || {}
+      const account = item.account || fallback.account || String(item.code || item.id || item.name).toLowerCase()
+      return { ...fallback, ...item, account, password: item.password || fallback.password || '123456', role: item.role || item.roleLabel || fallback.role || item.roleKey }
+    })
+    if (user) {
+      const current = employees.find(item => item.id === user.id || item.code === user.code || item.name === user.name)
+      if (current) {
+        user = profileFor(current)
+        localStorage.setItem('h5-user', JSON.stringify(user))
+      }
+    }
+    loginChoice = Math.max(0, employees.findIndex(item => item.id === (user?.id || rememberedLoginId)))
+  }
+  if (Array.isArray(config.workflowNodes)) {
+    config.workflowNodes.forEach(node => {
+      if (!node?.key || !stageMeta[node.key]) return
+      stageMeta[node.key] = [node.label || stageMeta[node.key][0], node.type || stageMeta[node.key][1]]
+      if (node.ownerKey) ownerKey[node.key] = node.ownerKey
+    })
+  }
+}
+
 window.addEventListener('storage', event => {
   if (event.key !== ADMIN_WORKBENCH_KEY || !event.newValue) return
   try {
@@ -507,28 +571,30 @@ function customers() {
   const recordsByRecent = visibleRecords().slice().sort((a, b) => `${b.businessDate}${b.time}`.localeCompare(`${a.businessDate}${a.time}`))
   const unique = new Map(); recordsByRecent.forEach(item => { if (!unique.has(item.phone)) unique.set(item.phone, item) })
   const list = [...unique.values()].filter(item => `${item.name}${item.phone}`.includes(customerKeyword))
-  return shell(`<section class="customer-page"><header class="customer-page-head"><h1>顾客档案</h1><p>本人负责顾客的只读档案与回访记录</p></header><form id="customer-search" class="customer-search-box"><input value="${customerKeyword}" placeholder="搜索顾客姓名或手机号"></form>${list.length ? `<section class="archive-list">${list.map(item => `<button class="archive-item" data-customer="${item.id}"><b class="archive-avatar">${item.name.slice(0,1)}</b><span class="archive-person"><b>${item.name}</b><small>${mask(item.phone)} · ${item.store}</small></span><span class="archive-member">金卡会员</span><i class="archive-arrow">›</i></button>`).join('')}</section>` : '<div class="empty-state"><b>没有符合条件的顾客</b></div>'}<p class="archive-privacy"><b>⌾</b><span>隐私保护：顾客信息仅限授权人员查看，请勿泄露或用于其他用途。</span></p></section>`, 'customers')
+  return shell(`<section class="customer-page"><header class="customer-page-head"><h1>顾客档案</h1><p>本人负责顾客的只读档案与回访记录</p></header><form id="customer-search" class="customer-search-box"><input value="${customerKeyword}" placeholder="搜索顾客姓名或手机号"></form>${list.length ? `<section class="archive-list">${list.map(item => { const archive = sharedCustomers.find(customer => customer.phone === item.phone) || {}; return `<button class="archive-item" data-customer="${item.id}"><b class="archive-avatar">${item.name.slice(0,1)}</b><span class="archive-person"><b>${archive.name || item.name}</b><small>${mask(archive.phone || item.phone)} · ${archive.store || item.store}</small></span><span class="archive-member">${archive.memberLevel || '普通会员'}</span><i class="archive-arrow">›</i></button>` }).join('')}</section>` : '<div class="empty-state"><b>没有符合条件的顾客</b></div>'}<p class="archive-privacy"><b>⌾</b><span>隐私保护：顾客信息仅限授权人员查看，请勿泄露或用于其他用途。</span></p></section>`, 'customers')
 }
 function customerDetail() {
   const item = current(); if (!item) return customers()
   ensureCustomerDetailTheme()
   const related = records.filter(record => record.phone === item.phone).sort(newestFirst)
   const latest = related[0] || item
-  const archive = latest.archive || latest.customerArchive || {}
+  const archive = { ...(sharedCustomers.find(customer => customer.phone === item.phone) || {}), ...(latest.archive || latest.customerArchive || {}) }
   const memberLevel = archive.memberLevel || latest.memberLevel || '金卡会员'
-  const basics = [['姓名', item.name], ['性别', archive.gender || '未填写'], ['生日', archive.birthday || '未填写'], ['手机号', mask(item.phone)], ['所属门店', latest.store], ['顾客来源', archive.source || '业务单同步']]
+  const basics = [['姓名', archive.name || item.name], ['性别', archive.gender || '未填写'], ['生日', archive.birthday || '未填写'], ['手机号', mask(archive.phone || item.phone)], ['所属门店', archive.store || latest.store], ['顾客来源', archive.source || '业务单同步']]
   const ownerLabels = [['场控','floorControl'],['管家','butler'],['咨询','consultant'],['总监','director'],['经理','manager'],['医生','doctor'],['护士','nurse'],['售后','aftersales']]
-  const owners = ownerLabels.map(([label, key]) => `<div><small>${label}</small><b>${latest.assignments?.[key] || '未分配'}</b></div>`).join('')
+  const owners = ownerLabels.map(([label, key]) => `<div><small>${label}</small><b>${archive.owners?.[key] || latest.assignments?.[key] || '未分配'}</b></div>`).join('')
   const noteFields = [['客户标签', (archive.tags || latest.tags || []).join('、') || '暂无记录'], ['特殊喜好', archive.preferences || latest.preferences || '暂无记录'], ['禁忌事项', archive.taboos || latest.taboos || '暂无记录'], ['铺垫内容', archive.preparation || latest.preparation || '暂无记录'], ['内部备注', archive.note || latest.note || '暂无记录']]
   const notes = noteFields.map(([label, value]) => `<div><small>${label}</small><b>${value}</b></div>`).join('')
   const assetMap = new Map()
   related.forEach(record => (record.projects?.length ? record.projects : [record.estimatedProject || record.project]).filter(Boolean).forEach(project => assetMap.set(project, (assetMap.get(project) || 0) + 1)))
-  const assets = [...assetMap].map(([project, count]) => `<div class="asset-row"><i class="asset-cover">◒</i><span><b>${project}</b><small>关联服务 ${count} 次 · 只读</small></span><i>›</i></div>`).join('') || `<div class="followup-empty"><div><i>▤</i><span>暂无项目资产</span></div></div>`
+  ;(archive.packages || []).forEach(pkg => { if (pkg.project && !assetMap.has(pkg.project)) assetMap.set(pkg.project, Number(pkg.purchased || 0) - Number(pkg.used || 0)) })
+  const assets = [...assetMap].map(([project, count]) => `<div class="asset-row"><i class="asset-cover">◒</i><span><b>${project}</b><small>剩余 ${count} 次 · 只读</small></span><i>›</i></div>`).join('') || `<div class="followup-empty"><div><i>▤</i><span>暂无项目资产</span></div></div>`
   const serviceRecords = related.slice(0, 8).map(record => `<div class="archive-service-row"><time>${record.businessDate}</time><span><b>${(record.projects || [record.estimatedProject || record.project]).filter(Boolean).join('、')}</b><small>${record.type || record.diagnosisType || '—'} · ${meta(record.status)[0]}</small></span></div>`).join('') || `<div class="followup-empty"><div><i>▤</i><span>暂无服务记录</span></div></div>`
-  const allFollowups = related.flatMap(record => record.followups || record.followupRecords || []).sort((a,b) => String(b.date || b.time).localeCompare(String(a.date || a.time)))
+  const imageCount = Number(archive.imageCount || archive.images?.length || 0)
+  const allFollowups = [...(archive.followups || []), ...related.flatMap(record => record.followups || record.followupRecords || [])].filter((followup, index, list) => list.findIndex(item => item.id && item.id === followup.id) === index || !followup.id).sort((a,b) => String(b.date || b.time).localeCompare(String(a.date || a.time)))
   const followups = allFollowups.length ? allFollowups.map(f => `<article class="followup-record"><b>${f.result || '已回访'}</b><span>${f.date || f.time || '—'} · ${f.method || '电话'} · 满意度：${f.satisfaction || '—'}</span><small>${f.note || '未填写回访备注'}</small></article>`).join('') : `<div class="followup-empty"><div><i>▤</i><span>暂无回访记录</span></div></div>`
-  const logs = related.flatMap(record => record.logs || []).sort((a,b) => String(b.time).localeCompare(String(a.time))).slice(0, 6).map(log => `<div><b>${log.action || '业务操作'}</b><small>${log.time || '—'} · ${log.operator || '系统'} · ${log.detail || '—'}</small></div>`).join('') || `<div class="followup-empty"><div><i>▤</i><span>暂无操作日志</span></div></div>`
-  return shell(`<section class="archive-detail-page"><header class="archive-detail-head"><button data-back>‹</button><h1>顾客档案</h1><span></span></header><p class="archive-readonly-top">基础资料、资产、服务及影像均为只读内容</p><section class="archive-profile-card"><div class="archive-profile-avatar">${item.name.slice(0,1)}</div><div class="archive-profile-info"><h2>${item.name}</h2><p>${mask(item.phone)}　⌑</p><span class="member-tag">${memberLevel}</span></div></section><section class="archive-detail-section base"><h2>基础资料 <small>只读</small></h2><div class="archive-summary-grid">${basics.map(([label,value]) => `<div><small>${label}</small><b>${value}</b></div>`).join('')}</div><p class="readonly-note">基础资料由管理后台维护，移动端仅可查看。</p></section><section class="archive-detail-section"><h2>人员归属 <small>只读</small></h2><div class="archive-owner-grid">${owners}</div></section><section class="archive-detail-section"><h2>服务偏好与备注 <small>只读</small></h2><div class="archive-note-list">${notes}</div></section><section class="archive-detail-section assets"><h2>项目资产 <small>只读</small></h2><div class="asset-stack">${assets}</div><p class="readonly-note">项目资产以后台档案与关联业务单为准，移动端不可编辑或核销。</p></section><section class="archive-detail-section service"><h2>服务与影像 <small>只读</small></h2><div class="archive-stat-grid"><div class="archive-stat"><i>▤</i><small>服务记录</small><b>${related.length} 次</b></div><div class="archive-stat"><i>▣</i><small>影像记录</small><b>${archive.imageCount || 0} 组</b></div><div class="archive-stat"><i>▶</i><small>回访记录</small><b>${allFollowups.length} 条</b></div></div><div class="archive-service-list">${serviceRecords}</div><p class="readonly-note">影像资料仅在后台留存与查看；移动端不提供上传或编辑操作。</p></section><section class="archive-detail-section followup"><h2>回访历史</h2><div class="archive-followups">${followups}</div></section><section class="archive-detail-section"><h2>操作日志 <small>只读</small></h2><div class="archive-log-list">${logs}</div></section></section><footer class="archive-followup-action"><button data-archive-followup>新增回访记录</button></footer>`, 'customers', false)
+  const logs = [...(archive.logs || []), ...related.flatMap(record => record.logs || [])].sort((a,b) => String(b.time).localeCompare(String(a.time))).slice(0, 6).map(log => `<div><b>${log.action || '业务操作'}</b><small>${log.time || '—'} · ${log.operator || '系统'} · ${log.detail || '—'}</small></div>`).join('') || `<div class="followup-empty"><div><i>▤</i><span>暂无操作日志</span></div></div>`
+  return shell(`<section class="archive-detail-page"><header class="archive-detail-head"><button data-back>‹</button><h1>顾客档案</h1><span></span></header><p class="archive-readonly-top">基础资料、资产、服务及影像均为只读内容</p><section class="archive-profile-card"><div class="archive-profile-avatar">${item.name.slice(0,1)}</div><div class="archive-profile-info"><h2>${item.name}</h2><p>${mask(item.phone)}　⌑</p><span class="member-tag">${memberLevel}</span></div></section><section class="archive-detail-section base"><h2>基础资料 <small>只读</small></h2><div class="archive-summary-grid">${basics.map(([label,value]) => `<div><small>${label}</small><b>${value}</b></div>`).join('')}</div><p class="readonly-note">基础资料由管理后台维护，移动端仅可查看。</p></section><section class="archive-detail-section"><h2>人员归属 <small>只读</small></h2><div class="archive-owner-grid">${owners}</div></section><section class="archive-detail-section"><h2>服务偏好与备注 <small>只读</small></h2><div class="archive-note-list">${notes}</div></section><section class="archive-detail-section assets"><h2>项目资产 <small>只读</small></h2><div class="asset-stack">${assets}</div><p class="readonly-note">项目资产以后台档案与关联业务单为准，移动端不可编辑或核销。</p></section><section class="archive-detail-section service"><h2>服务与影像 <small>只读</small></h2><div class="archive-stat-grid"><div class="archive-stat"><i>▤</i><small>服务记录</small><b>${related.length} 次</b></div><div class="archive-stat"><i>▣</i><small>影像记录</small><b>${imageCount} 组</b></div><div class="archive-stat"><i>▶</i><small>回访记录</small><b>${allFollowups.length} 条</b></div></div><div class="archive-service-list">${serviceRecords}</div><p class="readonly-note">影像资料仅在后台留存与查看；移动端不提供上传或编辑操作。</p></section><section class="archive-detail-section followup"><h2>回访历史</h2><div class="archive-followups">${followups}</div></section><section class="archive-detail-section"><h2>操作日志 <small>只读</small></h2><div class="archive-log-list">${logs}</div></section></section><footer class="archive-followup-action"><button data-archive-followup>新增回访记录</button></footer>`, 'customers', false)
 }
 function personalProfile() {
   ensureProfileTheme()
@@ -591,15 +657,17 @@ function bind() {
   document.querySelector('#logout')?.addEventListener('click', () => { if (user?.id) localStorage.setItem('h5-login-choice', user.id); localStorage.removeItem('h5-user'); user = null; view = 'home'; render() })
 }
 function submitAction(event) {
-  event.preventDefault(); const item = current(); const form = Object.fromEntries(new FormData(event.target)); const now = `${DEMO_DATE} ${new Date().toTimeString().slice(0,5)}`
-  if (actionMode === 'archiveFollowup' || item.status === 'followup') { const followup = { date: DEMO_DATE, ...form }; item.followups.push(followup); item.logs.push({ time: now, action: '新增回访记录', operator: user.name, detail: form.note }); if (actionMode === 'archiveFollowup') { save(); go('customerDetail'); return } }
-  else if (item.status === 'floorControl') { item.floorControl = { ...form, completedAt: now }; item.projects = [...event.target.querySelectorAll('[name=projects]:checked')].map(input => input.value); item.project = form.project; Object.assign(item.assignments, { butler: form.butler, consultant: form.consultant, director: form.director, manager: form.manager }) }
-  else if (item.status === 'arrivalConfirmation' && form.result !== '已到店') { item.arrivalConfirmation = form; item.notice = `${form.result}，保留在到店确认`; item.logs.push({ time: now, action: '到店确认', operator: user.name, detail: item.notice }); save(); go('taskDetail'); return }
-  else if (item.status === 'arrivalConfirmation') item.arrivalConfirmation = { ...form, confirmedAt: now }
-  else if (item.status === 'doctorDiagnosis') { item.doctorDiagnosis = form; item.assignments.doctor = user.name; item.assignments.nurse = form.nurse; item.department = form.department }
-  else item.serviceExecution = form
-  const from = item.status; item.status = nextStage[from] || item.status; item.notice = `${meta(from)[0]}已完成，已进入${meta(item.status)[0]}`; item.logs.push({ time: now, action: `完成${meta(from)[0]}`, operator: user.name, detail: item.notice }); save(); go('taskDetail')
+  event.preventDefault(); if (submitAction.busy) return; submitAction.busy = true
+  const item = current(); const form = Object.fromEntries(new FormData(event.target)); const now = `${DEMO_DATE} ${new Date().toTimeString().slice(0,5)}`
+  if (actionMode === 'archiveFollowup' || item.status === 'followup') { const followup = { date: DEMO_DATE, createdAt: now, ...form }; item.followups.push(followup); item.followupAt = now; item.nodeTimes ||= {}; item.nodeTimes.followupAt = now; item.logs.push({ time: now, action: '新增回访记录', operator: user.name, detail: form.note }); if (actionMode === 'archiveFollowup') { save(); submitAction.busy = false; go('customerDetail'); return } }
+  else if (item.status === 'floorControl') { item.floorControl = { ...form, completedAt: now }; item.nodeTimes ||= {}; item.nodeTimes.floorControlAt = now; item.projects = [...event.target.querySelectorAll('[name=projects]:checked')].map(input => input.value); item.project = form.project; Object.assign(item.assignments, { butler: form.butler, consultant: form.consultant, director: form.director, manager: form.manager }) }
+  else if (item.status === 'arrivalConfirmation' && form.result !== '已到店') { item.arrivalConfirmation = form; item.notice = `${form.result}，保留在到店确认`; item.logs.push({ time: now, action: '到店确认', operator: user.name, detail: item.notice }); save(); submitAction.busy = false; go('taskDetail'); return }
+  else if (item.status === 'arrivalConfirmation') { item.arrivalConfirmation = { ...form, confirmedAt: now }; item.nodeTimes ||= {}; item.nodeTimes.arrivalConfirmationAt = now }
+  else if (item.status === 'doctorDiagnosis') { item.doctorDiagnosis = form; item.nodeTimes ||= {}; item.nodeTimes.doctorDiagnosisAt = now; item.assignments.doctor = user.name; item.assignments.nurse = form.nurse; item.department = form.department }
+  else { item.serviceExecution = form; item.serviceEndedAt = now; item.nodeTimes ||= {}; item.nodeTimes.serviceEndedAt = now }
+  const from = item.status; item.status = nextStage[from] || item.status; item.notice = `${meta(from)[0]}已完成，已进入${meta(item.status)[0]}`; item.logs.push({ time: now, action: `完成${meta(from)[0]}`, operator: user.name, detail: item.notice }); save(); submitAction.busy = false; go('taskDetail')
 }
+submitAction.busy = false
 render()
 void pullSharedWorkbench()
 window.setInterval(() => { void pullSharedWorkbench() }, 1500)

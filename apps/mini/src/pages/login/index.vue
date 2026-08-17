@@ -5,7 +5,7 @@
       <text class="panel-title">选择演示账号</text>
       <text class="panel-desc">登录后仅可查看和处理本人负责的任务</text>
       <view v-for="employee in employees" :key="employee.id" class="employee" @tap="login(employee)">
-        <view class="avatar">{{ employee.name.slice(0, 1) }}</view><view class="employee-info"><text>{{ employee.name }}</text><text>{{ employee.role }} · {{ employee.store }}</text></view><text class="arrow">›</text>
+        <view class="avatar">{{ employee.name.slice(0, 1) }}</view><view class="employee-info"><text>{{ employee.name }}</text><text>{{ employee.role }} · {{ employee.department || '未分组' }} · {{ employee.store }}</text></view><text class="arrow">›</text>
       </view>
     </view>
     <view class="privacy">演示数据，请勿录入真实顾客信息</view>

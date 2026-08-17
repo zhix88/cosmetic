@@ -292,6 +292,7 @@
         :focus-request="customerFocus.request"
         @open-record="openDetail"
         @create-appointment="openCustomerAppointment"
+        @customer-changed="pushSharedWorkbench(records)"
       />
       <AppointmentCalendar
         v-else-if="activePage === 'appointments'"
@@ -622,6 +623,7 @@ import BatchAppointmentImport from './BatchAppointmentImport.vue'
 import LoginView from './LoginView.vue'
 import { canUseBatchImportInvitation, grantDemoCrudPermissions } from './demoPermissions.js'
 import { DEFAULT_WORKFLOW_NODES, buildWorkflowTransitions, normalizeWorkflowNodes, synchronizeDemoSettings } from './settingsStorage.js'
+import { createConfigSnapshot } from '../shared/demoDataContract.js'
 
 const STORAGE_KEY = 'cosmetic-workbench-v2'
 const SHARED_WORKBENCH_API = '/api/shared-workbench'
@@ -629,6 +631,7 @@ const today = new Date().toISOString().slice(0, 10)
 const CONFIG_KEY = 'cosmetic-system-config-v1'
 const SETTINGS_KEY = 'cosmetic-settings-data-v1'
 const AUTH_KEY = 'cosmetic-login-session-v1'
+const SHARED_CONFIG_REVISION_KEY = 'cosmetic-shared-config-revision-v1'
 // 演示站会复用浏览器中既有的本地数据。历史版本或手动修改过的数据
 // 可能不是有效 JSON；不能让一条损坏的缓存阻断 Vue 挂载并出现空白页。
 function readLocalJson(key, fallback = null) {
@@ -735,6 +738,7 @@ const workflowLegend = computed(() => [
 const savedSession = readLocalJson(AUTH_KEY)
 const currentUser = ref(employees.value.find((item) => item.code === savedSession?.code && item.status === 'active') || null)
 const currentRole = ref(currentUser.value?.roleKey || '')
+const sharedConfigRevision = ref(Number(readLocalJson(SHARED_CONFIG_REVISION_KEY, 0) || 0))
 const activePage = ref('workbench')
 const isAuthenticated = computed(() => Boolean(currentUser.value))
 const customerFocus = reactive({ phone: '', request: 0 })
@@ -1087,10 +1091,27 @@ onBeforeUnmount(() => {
 let sharedWorkbenchTimer
 async function pushSharedWorkbench(rows) {
   try {
-    await fetch(SHARED_WORKBENCH_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: rows }) })
+    const customers = JSON.parse(localStorage.getItem('cosmetic-customer-archive-v1') || '[]')
+    await fetch(SHARED_WORKBENCH_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: rows, customers, config: buildSharedConfigSnapshot() }) })
   } catch {
     // The static demo remains usable without the optional local sync service.
   }
+}
+
+function buildSharedConfigSnapshot() {
+  return createConfigSnapshot({
+    stores: [...stores],
+    departments: [...departments],
+    projectCatalog: JSON.parse(JSON.stringify(projectCatalog)),
+    staff: JSON.parse(JSON.stringify(employees.value)),
+    roles: JSON.parse(JSON.stringify(roleDefinitions.value)),
+    workflowNodes: JSON.parse(JSON.stringify(workflowNodes.value))
+  }, sharedConfigRevision.value)
+}
+
+function markSharedConfigChanged() {
+  sharedConfigRevision.value = Math.max(Date.now(), sharedConfigRevision.value + 1)
+  localStorage.setItem(SHARED_CONFIG_REVISION_KEY, String(sharedConfigRevision.value))
 }
 async function pullSharedWorkbench() {
   try {
@@ -1279,7 +1300,10 @@ function handleConfigChange(config) {
   projectCatalog.splice(0, projectCatalog.length, ...config.projectCatalog)
   if (config.staff) employees.value = ensureAdminEmployee(config.staff)
   if (config.roles) roleDefinitions.value = ensureReportPermissions(config.roles)
-  localStorage.setItem(CONFIG_KEY, JSON.stringify({ stores: [...stores], departments: [...departments], projectCatalog: JSON.parse(JSON.stringify(projectCatalog)) }))
+  markSharedConfigChanged()
+  const configSnapshot = buildSharedConfigSnapshot()
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(configSnapshot))
+  void pushSharedWorkbench(records.value)
 }
 
 function ensureAdminEmployee(rows) {
@@ -1361,6 +1385,7 @@ async function submitNode() {
   if (dialogStatus.value === 'doctorDiagnosis' && !validateStaffNames([nodeForm.doctor, nodeForm.nurse])) return
   const from = record.status
   let to = nextStatus[from]
+  record.nodeTimes ||= {}
   if (from === 'arrivalConfirmation' && nodeForm.result !== '已到店') {
     const flag = nodeForm.result === '申请改期' ? '顾客申请改期' : '未到店：需客服再次联系'
     record.flags.push(flag)
@@ -1373,16 +1398,19 @@ async function submitNode() {
     record.floorControl = { createdTime: record.floorControl?.createdTime || nowText(), scheduledTime: nowText(), note: nodeForm.note, managerSuggestion: nodeForm.project }
     Object.assign(record.assignments, { butler: nodeForm.butler, consultant: nodeForm.consultant, director: nodeForm.director, manager: nodeForm.manager })
     record.estimatedProject = nodeForm.project
+    record.nodeTimes.floorControlAt = nowText()
   }
   if (from === 'arrivalConfirmation') {
     record.arrivalTime = nodeForm.time
     record.arrivalConfirmation = { confirmedTime: nowText(), arrivalTime: nodeForm.time, result: nodeForm.result, note: nodeForm.note }
     record.diagnosisType = nodeForm.diagnosisType
+    record.nodeTimes.arrivalConfirmationAt = nowText()
   }
   if (from === 'doctorDiagnosis') {
     record.department = nodeForm.department
     record.doctorDiagnosis = { doctor: nodeForm.doctor, nurse: nodeForm.nurse, numbingTime: nodeForm.numbingTime, medication: nodeForm.medication, note: nodeForm.note, scheduledTime: nowText() }
     Object.assign(record.assignments, { doctor: nodeForm.doctor, nurse: nodeForm.nurse })
+    record.nodeTimes.doctorDiagnosisAt = nowText()
   }
   if (from === 'invited') {
     record.businessDate = nodeForm.date
@@ -1412,11 +1440,17 @@ async function submitNode() {
     record.cardAmount = ['singleProject','activityPackage','member'].includes(nodeForm.paymentType) ? nodeForm.cardAmount : 0
     record.followupDate = calculateFollowupDate(nodeForm.projects)
     record.serviceExecution = { time: nowText(), projects: [...nodeForm.projects], paymentType: nodeForm.paymentType, note: nodeForm.note }
+    record.serviceEndedAt = nowText()
+    record.nodeTimes.serviceEndedAt = record.serviceEndedAt
     pushMessage(record, `已按项目回访规则生成预计回访：${record.followupDate}`)
     record.businessDate = selectedDate.value
   }
   if (from === 'followup' && ['需再次跟进', '投诉待处理'].includes(nodeForm.result)) {
     record.flags.push(nodeForm.result)
+  }
+  if (from === 'followup') {
+    record.followupAt = nowText()
+    record.nodeTimes.followupAt = record.followupAt
   }
   if (to === 'completed') record.completedDate = selectedDate.value
   record.note = nodeForm.note || record.note
@@ -1488,6 +1522,9 @@ async function submitCommon() {
     record.status = 'cancelled'
     record.flags.push(`已取消：${commonForm.reason}`)
     addLog(record, '取消业务', commonForm.reason, from, 'cancelled', 'danger')
+    record.cancelledAt = nowText()
+    record.nodeTimes ||= {}
+    record.nodeTimes.cancelledAt = record.cancelledAt
   }
   commonDialogVisible.value = false
   ElMessage.success('操作已保存并记录日志')
@@ -1539,6 +1576,9 @@ async function resetData() {
     selectedDate.value = today
     activeStatus.value = 'all'
     localStorage.removeItem(STORAGE_KEY)
+    markSharedConfigChanged()
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(buildSharedConfigSnapshot()))
+    void pushSharedWorkbench(records.value)
     dataResetToken.value += 1
     detailVisible.value = false
     ElMessage.success('演示数据已恢复')

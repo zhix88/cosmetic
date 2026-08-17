@@ -1,8 +1,9 @@
 <script>
-import { ensureDemoData } from './services/repository'
+import { ensureDemoData, syncSharedSnapshot } from './services/repository'
 
 export default {
-  onLaunch() { ensureDemoData() }
+  onLaunch() { ensureDemoData(); void syncSharedSnapshot() },
+  onShow() { void syncSharedSnapshot() }
 }
 </script>
 

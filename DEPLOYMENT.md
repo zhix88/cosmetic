@@ -4,6 +4,7 @@
 
 - 本系统是 Vue 3 纯前端静态演示站，不需要应用服务器、数据库或后端接口。
 - 演示操作数据保存在访问者当前浏览器的 `localStorage` 中；不同电脑、浏览器或无痕窗口之间不会共享数据。
+- PC、H5 和小程序的跨端演示同步依赖共享快照接口；静态 Pages 地址只提供 H5 文件，不能替代该接口。
 - Excel 导入、导出与图表计算都在浏览器本地执行。请勿导入真实客户资料。
 
 ## 构建发布包
@@ -13,6 +14,8 @@
 ```powershell
 pnpm install --frozen-lockfile
 pnpm build
+node node_modules/vite/bin/vite.js build apps/h5 --base ./ --outDir ../../dist/mobile
+pnpm --dir apps/mini build:mp-weixin
 ```
 
 构建成功后，将 `dist/` 中的全部文件上传到服务器站点目录，例如 `/var/www/medical-aesthetics-demo`。
@@ -53,3 +56,12 @@ nginx -t && systemctl reload nginx
 - 角色切换、流程推进、筛选、图表、Excel 导入导出均在浏览器中完成。
 - 刷新页面后操作结果保持；点击“重置演示数据”后恢复初始样例。
 - 首次访问、刷新页面和 HTTPS 访问均可正确加载静态资源。
+
+## 移动端与共享数据
+
+- 管理后台：`https://zhix88.github.io/cosmetic/`
+- H5：`https://zhix88.github.io/cosmetic/mobile/`
+- 小程序：使用 `apps/mini/dist/build/mp-weixin/` 导入微信开发者工具。
+- 本地开发时，H5 默认访问 `http://127.0.0.1:4174/api/shared-workbench`；小程序需在本地配置可访问的共享接口地址。
+- 共享快照包含任务、节点时间、员工/部门/流程配置、顾客档案和回访记录。移动端基础资料与项目资产只读，只有当前节点处理和新增回访允许写入。
+- 接口不可用时，H5 和小程序保留本地有效数据并显示/记录待同步状态；恢复连接后再拉取或写回。

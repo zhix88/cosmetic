@@ -1,5 +1,10 @@
+import { matchesAssignment, normalizeConfig, normalizeCustomers, normalizeSnapshot } from '../../../../shared/demoDataContract.js'
+
 const DATA_KEY = 'cosme-mini-demo-data-v1'
 const SESSION_KEY = 'cosme-mini-demo-session-v1'
+const SNAPSHOT_KEY = 'cosme-mini-demo-snapshot-v1'
+const SYNC_URL_KEY = 'cosme-mini-shared-sync-url-v1'
+const SYNC_STATUS_KEY = 'cosme-mini-shared-sync-status-v1'
 
 export const stages = {
   floorControl: { label: '场控排诊', owner: 'floorControl', tone: 'orange' },
@@ -44,32 +49,93 @@ function seedData() {
 
 function normalizeDemoData(data) {
   const seeded = seedData()
-  const employees = seeded.employees
+  const sharedSnapshot = uni.getStorageSync(SNAPSHOT_KEY) || {}
+  const sharedConfig = normalizeConfig(sharedSnapshot.config || {})
+  const employees = sharedConfig.staff.length ? sharedConfig.staff : (Array.isArray(data.employees) && data.employees.length ? data.employees : seeded.employees)
   const fallback = seeded.records[0].assignments
-  const assignmentMap = { floorControl: '娜娜', doctor: '小医', service: '舒婷', aftercare: '舒婷', butler: '林悦', director: '陈楠', manager: '赵阳', nurse: '张璐', storeManager: '王晓歌' }
   const records = (data.records || []).map((record, index) => ({
     ...record,
-    assignments: { ...fallback, ...(record.assignments || {}), ...assignmentMap },
+    assignments: { ...fallback, ...(record.assignments || {}) },
     floorControl: { ...record.floorControl },
     doctorDiagnosis: { ...record.doctorDiagnosis },
     serviceExecution: { ...record.serviceExecution }
   }))
-  const customers = (data.customers || []).map(customer => ({ ...customer, owners: { ...(customer.owners || {}), floorControl: '娜娜', doctor: '小医', service: '舒婷', aftercare: '舒婷' } }))
-  return { ...data, employees, customers, records }
+  const customers = normalizeCustomers(data.customers || []).map(customer => ({ ...customer, owners: { ...(customer.owners || {}) } }))
+  return { ...data, employees, customers, records, departments: sharedConfig.departments.length ? sharedConfig.departments : (data.departments || []), workflowNodes: sharedConfig.workflowNodes.length ? sharedConfig.workflowNodes : (data.workflowNodes || []) }
 }
 export function ensureDemoData() { if (!uni.getStorageSync(DATA_KEY)) uni.setStorageSync(DATA_KEY, seedData()) }
-export function getData() { ensureDemoData(); const data = normalizeDemoData(uni.getStorageSync(DATA_KEY)); uni.setStorageSync(DATA_KEY, data); return clone(data) }
+export function getData() { ensureDemoData(); const data = normalizeDemoData(uni.getStorageSync(DATA_KEY)); applyWorkflowConfig(data.workflowNodes); uni.setStorageSync(DATA_KEY, data); return clone(data) }
 export function saveData(data) { uni.setStorageSync(DATA_KEY, clone(data)) }
 export function resetDemoData() { uni.setStorageSync(DATA_KEY, seedData()); uni.removeStorageSync(SESSION_KEY) }
+export function getSyncUrl() { return uni.getStorageSync(SYNC_URL_KEY) || '' }
+export function setSyncUrl(url) { if (url) uni.setStorageSync(SYNC_URL_KEY, String(url).trim()); else uni.removeStorageSync(SYNC_URL_KEY) }
+function requestSnapshot(url) {
+  return new Promise((resolve, reject) => {
+    uni.request({ url, method: 'GET', timeout: 8000, success: response => resolve(response.data), fail: reject })
+  })
+}
+function postSnapshot(url, payload) {
+  return new Promise((resolve, reject) => {
+    uni.request({ url, method: 'POST', timeout: 8000, header: { 'content-type': 'application/json' }, data: payload, success: response => {
+      if (response.statusCode >= 200 && response.statusCode < 300) resolve(response.data)
+      else reject(new Error(`共享快照写入失败（${response.statusCode || '未知错误'}）`))
+    }, fail: reject })
+  })
+}
+function setSyncStatus(status, message = '') { uni.setStorageSync(SYNC_STATUS_KEY, { status, message, updatedAt: Date.now() }) }
+export function getSyncStatus() { return uni.getStorageSync(SYNC_STATUS_KEY) || { status: 'idle', message: '' } }
+export async function pushSharedSnapshot(url = getSyncUrl()) {
+  if (!url) return false
+  setSyncStatus('syncing', '正在同步共享任务')
+  try {
+    const current = getData()
+    const payload = await postSnapshot(url, { data: current.records, customers: current.customers })
+    const snapshot = normalizeSnapshot(payload)
+    if (!snapshot.data.length) throw new Error('共享快照为空')
+    uni.setStorageSync(SNAPSHOT_KEY, { ...payload, data: snapshot.data, customers: snapshot.customers })
+    setSyncStatus('synced')
+    return true
+  } catch (error) {
+    setSyncStatus('pending', error?.message || '网络不可用，已保留本地结果')
+    return false
+  }
+}
+export async function syncSharedSnapshot(url = getSyncUrl()) {
+  ensureDemoData()
+  if (!url) return false
+  try {
+    const payload = await requestSnapshot(url)
+    const snapshot = normalizeSnapshot(payload)
+    if (!snapshot.data.length) return false
+    const cached = uni.getStorageSync(SNAPSHOT_KEY) || {}
+    const incomingVersion = Number(snapshot.updatedAt || 0)
+    if (incomingVersion && Number(cached.updatedAt || 0) > incomingVersion) return false
+    const current = getData()
+    saveData({ ...current, records: snapshot.data, customers: snapshot.customers.length ? snapshot.customers : current.customers })
+    uni.setStorageSync(SNAPSHOT_KEY, { ...payload, updatedAt: incomingVersion, data: snapshot.data, customers: snapshot.customers })
+    setSyncStatus('synced')
+    return true
+  } catch {
+    // 网络不可用或快照非法时保留当前本地演示数据。
+    setSyncStatus('offline', '网络不可用，继续使用本地演示数据')
+    return false
+  }
+}
 export function getSession() { return uni.getStorageSync(SESSION_KEY) || null }
 export function setSession(employee) { uni.setStorageSync(SESSION_KEY, employee) }
 export function logout() { uni.removeStorageSync(SESSION_KEY) }
 const roleAssignmentKeys = { aftersales: ['aftersales', 'aftercare', 'service'], headNurse: ['headNurse', 'nurse'] }
 const assignmentKeys = role => roleAssignmentKeys[role] || [role]
+function applyWorkflowConfig(nodes = []) {
+  nodes.forEach(node => {
+    if (!node?.key || !stages[node.key]) return
+    stages[node.key] = { ...stages[node.key], label: node.label || stages[node.key].label, owner: node.ownerKey || stages[node.key].owner, tone: node.type || stages[node.key].tone }
+  })
+}
 const belongsToEmployee = (record, employee) => {
   if (!employee) return false
   if (employee.roleKey === 'storeManager') return record.store === employee.store
-  return assignmentKeys(employee.roleKey).some(key => record.assignments?.[key] === employee.name)
+  return matchesAssignment(record, employee) || assignmentKeys(employee.roleKey).some(key => record.assignments?.[key] === employee.name)
 }
 const canHandleStage = (record, employee) => {
   if (employee?.roleKey === 'storeManager') return record.store === employee.store
@@ -81,19 +147,19 @@ export function accessibleCustomers(employee) { const data = getData(); const id
 export function submitStage(recordId, employee, form) {
   const data = getData(); const record = data.records.find(item => item.id === recordId)
   if (!record || !canHandleStage(record, employee)) throw new Error('无权处理该任务')
-  const from = record.status; const to = nextStage[from]
+  const from = record.status; const to = nextStage[from]; record.nodeTimes ||= {}
   if (from === 'arrivalConfirmation' && form.result !== '已到店') {
     record.flags = [...record.flags, form.result === '申请改期' ? '顾客申请改期' : '未到店：需再次联系']
     record.arrivalConfirmation = { ...form, confirmedTime: now() }
     record.logs.push(log(`${employee.role}·${employee.name}`, '登记到店结果', form.result, from, from, 'warning'))
   } else {
-    if (from === 'floorControl') { record.floorControl = { ...form, scheduledTime: now(), managerSuggestion: form.project }; record.estimatedProject = form.project || record.estimatedProject }
-    if (from === 'arrivalConfirmation') { record.arrivalConfirmation = { ...form, confirmedTime: now() }; record.arrivalTime = form.time; record.diagnosisType = form.diagnosisType }
-    if (from === 'doctorDiagnosis') { record.doctorDiagnosis = { ...form, scheduledTime: now() }; record.projects = form.projects || record.projects; record.department = form.department; record.assignments.doctor = form.doctor || employee.name }
-    if (from === 'service') { record.serviceExecution = { ...form, time: now() }; record.projects = form.projects || record.projects; record.followupDate = form.followupDate }
-    if (from === 'followup') { const followup = { id: `FU-${Date.now()}`, ...form, date: date(), operator: `${employee.role}·${employee.name}` }; record.followupRecords.push(followup); const customer = data.customers.find(c => c.id === record.customerId); if (customer) customer.followups.push(followup) }
+    if (from === 'floorControl') { const completedAt = now(); record.floorControl = { ...form, scheduledTime: completedAt, managerSuggestion: form.project }; record.nodeTimes.floorControlAt = completedAt; record.floorControlAt = completedAt; record.estimatedProject = form.project || record.estimatedProject }
+    if (from === 'arrivalConfirmation') { const confirmedAt = now(); record.arrivalConfirmation = { ...form, confirmedTime: confirmedAt }; record.nodeTimes.arrivalConfirmationAt = confirmedAt; record.arrivalConfirmationAt = confirmedAt; record.arrivalTime = form.time; record.diagnosisType = form.diagnosisType }
+    if (from === 'doctorDiagnosis') { const scheduledAt = now(); record.doctorDiagnosis = { ...form, scheduledTime: scheduledAt }; record.nodeTimes.doctorDiagnosisAt = scheduledAt; record.doctorDiagnosisAt = scheduledAt; record.projects = form.projects || record.projects; record.department = form.department; record.assignments.doctor = form.doctor || employee.name }
+    if (from === 'service') { const endedAt = now(); record.serviceExecution = { ...form, time: endedAt }; record.nodeTimes.serviceEndedAt = endedAt; record.serviceEndedAt = endedAt; record.projects = form.projects || record.projects; record.followupDate = form.followupDate }
+    if (from === 'followup') { const followedAt = now(); const followup = { id: `FU-${Date.now()}`, ...form, date: date(), createdAt: followedAt, followupAt: followedAt, operator: `${employee.role}·${employee.name}` }; record.followupRecords.push(followup); record.nodeTimes.followupAt = followedAt; record.followupAt = followedAt; const customer = data.customers.find(c => c.id === record.customerId); if (customer) customer.followups.push(followup) }
     record.status = to
     record.logs.push(log(`${employee.role}·${employee.name}`, `完成${stages[from].label}`, form.note || '已完成当前节点处理', from, to, to === 'completed' ? 'success' : 'primary'))
   }
-  saveData(data); return clone(record)
+  saveData(data); void pushSharedSnapshot(); return clone(record)
 }

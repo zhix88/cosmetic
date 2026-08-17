@@ -291,7 +291,7 @@ const props = defineProps({
   focusPhone: { type: String, default: '' },
   focusRequest: { type: Number, default: 0 }
 })
-defineEmits(['open-record', 'create-appointment'])
+const emit = defineEmits(['open-record', 'create-appointment', 'customer-changed'])
 
 const STORAGE_KEY = 'cosmetic-customer-archive-v1'
 const memberLevels = ['普通会员', '银卡', '金卡', '铂金', '黑金']
@@ -415,7 +415,7 @@ const photoRules = {
 }
 const followupRules = { date:[{required:true,message:'请选择回访日期',trigger:'change'}], method:[{required:true,message:'请选择回访方式',trigger:'change'}], satisfaction:[{required:true,message:'请选择满意度',trigger:'change'}], spendingPower:[{required:true,message:'请选择消费力评级',trigger:'change'}], note:[{required:true,message:'请填写回访记录',trigger:'blur'}] }
 
-watch(customers, (value) => localStorage.setItem(STORAGE_KEY, JSON.stringify(value)), { deep: true })
+watch(customers, (value) => { localStorage.setItem(STORAGE_KEY, JSON.stringify(value)); emit('customer-changed') }, { deep: true })
 watch(() => props.allRecords, (value) => { customers.value = mergeBusinessCustomers(customers.value, value.length ? value : props.records) }, { deep: true })
 watch(() => [props.role, props.roleMeta.managedStores], () => { storeFilter.value = accessibleStores.value.length > 1 ? 'all' : accessibleStores.value[0] }, { deep: true })
 watch(() => props.focusRequest, () => {
